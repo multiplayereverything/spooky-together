@@ -1,0 +1,14 @@
+# Decompiled game code, lab copies and their logs
+private/
+# Loader and tool binaries (never distributed)
+deps/
+toolkits/
+# Builds, release ZIPs, test logs and screenshots
+artifacts/
+# Generated code graph
+graphify-out/
+# Local settings and logs
+*.ini
+*.log
+bin/
+obj/
