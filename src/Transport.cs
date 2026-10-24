@@ -21,7 +21,7 @@ namespace SpookyTogether
     {
         public const int MaxFrame = 65536;
         // Lab only: simulated one-way delay and jitter on every send, to test desync on slow links.
-        public static int LagMs, JitterMs;
+        public static int LagMs, JitterMs;   // lab-only
         readonly ConcurrentQueue<NetworkEvent> events = new ConcurrentQueue<NetworkEvent>();
         readonly Dictionary<int, Link> links = new Dictionary<int, Link>();
         readonly object gate = new object();
@@ -247,7 +247,7 @@ namespace SpookyTogether
                         owner.Emit(id, "packet", ReadExactly(stream, size), null);
                     }
                 }
-                catch (Exception) { }
+                catch (Exception) { }   // a closed socket or a bad frame ends the link; Drop reports the disconnect
                 finally { owner.Drop(id, this); }
             }
             void Write()
@@ -271,7 +271,7 @@ namespace SpookyTogether
                         stream.Write(header, 0, 4); stream.Write(packet, 0, size);
                     }
                 }
-                catch (Exception) { }
+                catch (Exception) { }   // a closed socket ends the link; Drop reports the disconnect
                 finally { owner.Drop(id, this); wake.Dispose(); }
             }
         }

@@ -29,7 +29,15 @@ Start with `../handoff.md` (current state, next steps) and `README.md` (behaviou
 | `HSMGameRootState.GotoKillscreen` | Endings: the host broadcasts; a client's call becomes a request to the host. |
 | `EndlessSkipRoomUIControl.StartInteraction` | Host-only skip-room TV. |
 
+## Repository
+- **GitHub:** https://github.com/multiplayereverything/spooky-together (private). Commit and push after each version.
+- **Identity:** commits use the repo's local identity (`multiplayereverything`, the GitHub no-reply address), never a personal email.
+- **Before pushing:** run `python tests/rules-test.py`, and lint `git archive HEAD` with the Universal Modder publish check against `SpookyUnity_Data`. Keep personal paths out of scripts (use `$HOME`).
+- **Ignored:** `private/`, `deps/`, `artifacts/`, `graphify-out/`, `*.ini`, `*.log`.
+- **Patterns:** the `YokWare-multiplayer-game` skill holds the co-op design rules (host authority, sender rules, reset registration, offline tests).
+
 ## Rules
+- **Statics:** a new static field is cleared in a reset method or marked `// process-scoped`, `// call-scoped` or `// lab-only` on its line; an empty `catch` says why on its line. `tests/rules-test.py` enforces both.
 - **Build and test:** build with `scripts/build.ps1`. Test with `scripts/run-tour.ps1 -Tour <enemies|state|axe|ending|clientending|serverlist|soak>`.
   - Windows are hidden; up to 4 lab copies run: host (BepInEx), c1 (MelonLoader), c2 (BepInEx), c3 (MelonLoader).
   - Per-instance evidence is `private/lab-*/spooky-together-lab.log` (`ST-CHECK`, `ST-METRIC`, `ST-MODERROR`). Unity logs are in `private/lab-logs/`.

@@ -19,9 +19,9 @@ namespace SpookyTogether
         bool debugGod;
         string debugStatus = "";
         static readonly string[] debugTabs = { "Rooms", "Specimens", "Player", "Info", "Errors" };
-        static readonly List<string> recentErrors = new List<string>();
-        static readonly List<string> recentMessages = new List<string>();
-        static readonly object recentGate = new object();
+        static readonly List<string> recentErrors = new List<string>();   // process-scoped: debug panel history
+        static readonly List<string> recentMessages = new List<string>();   // process-scoped: debug panel history
+        static readonly object recentGate = new object();   // process-scoped: debug panel history lock
         float frameMsAvg;
         readonly Dictionary<int, float> pingSentAt = new Dictionary<int, float>();
         readonly Dictionary<int, float> rttMs = new Dictionary<int, float>();

@@ -1,5 +1,41 @@
 # Spooky Together mod log
 
+## 0.2.7 (2026-10-25): source rule test, cut-out sound fix
+Request: "use it on spooky" (review the mod against the YokWare-multiplayer-game skill and apply what fits). Protocol unchanged (7).
+
+### Fixed
+- **Wrong cut-out sound on clients.** The host remembered the last sound any cut-out played and never cleared it, so a pop that played no sound sent the previous cut-out's sound (possibly from an earlier room or run). The host now uses a noted sound once (`Cutouts.cs`). `SpecimenOneController.Deploy` plays its sound synchronously, before the mod broadcasts the pop, so a pop with a sound still sends it.
+- The host's picture and sound names a client receives for a cut-out are cleared once that pop is applied.
+- **Overlapping messages:** a message that wrapped onto two lines in the top-right list was drawn under the next one (seen in a lab screenshot: "actively refused it" over "Connecting to..."). Each message now takes its real height (`DrawHud`).
+- **Lab copies stuck in online mode:** a tour that stopped early left `Mode=online` in a lab copy's `SpookyTogether.ini`, so the next LAN tour's host tried an online room and every client was refused. `launch-lab.ps1` now resets each copy to LAN before launch; online tours still pass `-st-online` / `-st-relay`.
+
+### Added
+- **`tests/rules-test.py`:** source checks that need no game or build (seconds):
+  - every `Op` has a handler, is built somewhere, and every op a client sends is accepted by `HostPacket`;
+  - every mutable static is cleared by a reset method, set and cleared in a `try/finally`, or marked on its declaration (`// process-scoped`, `// call-scoped`, `// lab-only`);
+  - every empty `catch` says why on its line;
+  - `ModVersion` matches MODLOG's top entry and `Wire.Version` its newest protocol.
+- The 45 static fields and 20 empty catches now say what they are and why (comments only).
+- **Git:** the source is in https://github.com/multiplayereverything/spooky-together (private).
+
+- **Early stop judged a loading client as behind:** tours stop once every expected check passed, and a client still loading into the host's room was then reported as "fell behind the host" (`elevator`). The early stop now also waits while a client is behind (`run-tour.ps1`); a client that never catches up still fails at the deadline.
+
+### Evidence (4 players)
+| Run | Result | Notes |
+| --- | --- | --- |
+| `tests/rules-test.py` | PASS | 35 ops handled and built, 7 client ops accepted by the host, 45 statics covered, 20 empty catches explained, versions agree |
+| quick suite | 9 of 11 | enemies, state, axe, clientending, takerbad, cutouts, stuck, look, serverlist passed; `elevator` and `debug` failed (below) |
+| `debug` rerun | PASS | the first run's "C3 entity desync worsening (0.54 m per 10 s)" did not recur: flaky |
+| `elevator` reruns after the early-stop fix | PASS, PASS | the failures were the early stop racing a loading client |
+| HUD screenshot | checked | a lab client with no host lists wrapped "actively refused" errors without overlap |
+
+Not run on 0.2.7: the full suite (soak, lag, campaigns, endings, reconnect). Not installed.
+
+### Audit against the skill (not changed)
+- Already in place: guard flags cleared in `finally`, run-state checksum with full repair, version and game-hash check at hello, nearest-player retarget transpiler, host-decided cut-outs and seeded room randomness, a `reconnect` tour.
+- Not added (the handoff limits this mod to what multiplayer compatibility needs): voice chat, host migration, a sectioned desync checker for specimens.
+- `Transport` drops a link on a bad frame without logging why (the catch ends the read loop); noted for a later change.
+
 ## 0.2.6 (2026-10-22): F6 debug menu is host-only
 - Only the host can open the F6 debug menu; on a connected client F6 shows a message instead.
 - The `debug` tour now has the host use the menu (travel, spawn, report) and clients check they follow.

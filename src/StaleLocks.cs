@@ -14,8 +14,8 @@ namespace SpookyTogether
         bool forcedTransfer;
         MinigameBaseControl activeMinigame;
         public int StaleLocksReleased;
-        static FieldInfo moveLockField, lookLockField, interactionLockField;
-        static MethodInfo endGameMethod;
+        static FieldInfo moveLockField, lookLockField, interactionLockField;   // process-scoped: reflection cache
+        static MethodInfo endGameMethod;   // process-scoped: reflection cache
 
         public static void AfterMinigameStart(MinigameBaseControl game) { if (Instance != null) Instance.activeMinigame = game; }
 

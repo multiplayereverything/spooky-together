@@ -15,8 +15,8 @@ namespace SpookyTogether
         float propsDirtyAt = -1;
         public int PropRefreshes, PropRefreshFailures, PropsTouched;
         readonly Dictionary<int, HashSet<int>> puzzleSegmentsMet = new Dictionary<int, HashSet<int>>();
-        static readonly Dictionary<string, MethodInfo> propMethods = new Dictionary<string, MethodInfo>();
-        static readonly Dictionary<string, FieldInfo> propFields = new Dictionary<string, FieldInfo>();
+        static readonly Dictionary<string, MethodInfo> propMethods = new Dictionary<string, MethodInfo>();   // process-scoped: reflection cache
+        static readonly Dictionary<string, FieldInfo> propFields = new Dictionary<string, FieldInfo>();   // process-scoped: reflection cache
 
         void MarkPropsDirty() { if (propsDirtyAt < 0) propsDirtyAt = Time.realtimeSinceStartup + 0.25f; }
 
@@ -74,7 +74,7 @@ namespace SpookyTogether
             {
                 HashSet<int> met = new HashSet<int>();
                 for (int i = 0; i < puzzle.segments.Length; i++)
-                    try { if (puzzle.segments[i].condition.Evaluate()) met.Add(i); } catch { }
+                    try { if (puzzle.segments[i].condition.Evaluate()) met.Add(i); } catch { }   // a condition on an unloaded object throws: counts as not met
                 puzzleSegmentsMet[puzzle.GetInstanceID()] = met;
             }
         }

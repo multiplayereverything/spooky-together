@@ -185,7 +185,7 @@ namespace ModRelay
                         else if (line.StartsWith("E|")) { reason = "Online server: " + line.Substring(2); break; }
                     }
                 }
-                catch (Exception) { }
+                catch (Exception) { }   // the socket closing ends the loop; onClosed reports why
                 bool wasOpen = !disposed;
                 Dispose();
                 if (wasOpen && onClosed != null) onClosed(reason);
@@ -227,7 +227,7 @@ namespace ModRelay
         {
             if (disposed) return;
             disposed = true;
-            try { control.Close(); } catch (Exception) { }
+            try { control.Close(); } catch (Exception) { }   // already closed
         }
     }
 }

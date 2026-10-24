@@ -49,10 +49,10 @@ namespace SpookyTogether
         int snapshotSeq = -1, hostSpecCount;
         float lastDesync, nextClientPrune;
         static int spawningForNet;
-        static Transform spawnAnchor;
-        static Type[] specimenTypes;
+        static Transform spawnAnchor;   // process-scoped: one DontDestroyOnLoad helper object
+        static Type[] specimenTypes;   // process-scoped: reflection cache
         public static bool AllowHostHurt, AllowEndSpecimen;
-        static readonly List<int> scratchIds = new List<int>();
+        static readonly List<int> scratchIds = new List<int>();   // process-scoped: scratch buffer
 
         void ResetEnemies()
         {
@@ -68,10 +68,10 @@ namespace SpookyTogether
             proxies.Clear();
         }
 
-        static SpecimenManager Specimens { get { try { return ServiceLocator.GetService<SpecimenManager>(); } catch { return null; } } }
+        static SpecimenManager Specimens { get { try { return ServiceLocator.GetService<SpecimenManager>(); } catch { return null; } } }   // not registered outside a run
 
         // --- Retargeting (host) -----------------------------------------------------------------------
-        static readonly Dictionary<Type, FieldInfo> ownerFields = new Dictionary<Type, FieldInfo>();
+        static readonly Dictionary<Type, FieldInfo> ownerFields = new Dictionary<Type, FieldInfo>();   // process-scoped: reflection cache
 
         static Component OwnerOf(object owner)
         {
@@ -193,7 +193,7 @@ namespace SpookyTogether
                 {
                     if (method.IsAbstract || method.ContainsGenericParameters) continue;
                     MethodBody body;
-                    try { body = method.GetMethodBody(); } catch { continue; }
+                    try { body = method.GetMethodBody(); } catch { continue; }   // methods without IL (extern, runtime) are skipped
                     if (body == null || !CallsToken(body.GetILAsByteArray(), token)) continue;
                     try { harmony.Patch(method, transpiler: transpiler); patched++; }
                     catch (Exception ex) { Log("Retarget patch failed " + type.Name + "." + method.Name + ": " + ex.Message); }
@@ -241,7 +241,7 @@ namespace SpookyTogether
             int peerId;
             if (!rt.targetOf.TryGetValue(specimen.GetInstanceID(), out peerId) || peerId < 0) return true;
             string killscreen = null;
-            try { killscreen = source.killscreenName; } catch { }
+            try { killscreen = source.killscreenName; } catch { }   // a destroyed specimen's getter throws
             rt.SendHurt(peerId, dmg, killscreen, doFx, fxDuration);
             return false;
         }
@@ -261,7 +261,7 @@ namespace SpookyTogether
             if (rt.IsClient) return !rt.IsPuppet(spec);
             int peerId;
             if (!rt.targetOf.TryGetValue(spec.GetInstanceID(), out peerId) || peerId < 0) return true;
-            string killscreen = null; try { killscreen = ((SpecimenInterface)spec).killscreenName; } catch { }
+            string killscreen = null; try { killscreen = ((SpecimenInterface)spec).killscreenName; } catch { }   // a destroyed specimen's getter throws
             rt.SendHurt(peerId, spec.damage, killscreen, true, 0.5f);
             return false;
         }
@@ -325,7 +325,7 @@ namespace SpookyTogether
         static int HpOf(GameObject spec)
         {
             SpecimenInterface si = spec != null ? spec.GetComponent<SpecimenInterface>() : null;
-            try { return si != null ? si.hp : 0; } catch { return 0; }
+            try { return si != null ? si.hp : 0; } catch { return 0; }   // specimens without hp throw from the interface
         }
 
         static byte[] SpawnPacket(int id, string specId, Vector3 pos, Quaternion rot, bool rechase, int hp)
@@ -399,7 +399,7 @@ namespace SpookyTogether
             {
                 // Chasers count their remaining rooms in hp; matching it keeps room-end behaviour in step with the host.
                 SpecimenInterface si = obj.GetComponent<SpecimenInterface>();
-                try { if (si != null) si.hp = puppet.Hp; } catch { }
+                try { if (si != null) si.hp = puppet.Hp; } catch { }   // specimens without hp throw from the interface
             }
             // A chaser that reaches a client after that client's room is ready never got the room's spawn door from
             // SpecimenManager.StartRoom; hand it the current door so its emergence logic has one.
@@ -480,8 +480,8 @@ namespace SpookyTogether
             }
         }
 
-        static readonly System.Text.StringBuilder keyBuilder = new System.Text.StringBuilder();
-        static FieldInfo huskList;
+        static readonly System.Text.StringBuilder keyBuilder = new System.Text.StringBuilder();   // process-scoped: scratch buffer
+        static FieldInfo huskList;   // process-scoped: reflection cache
 
         // The same key on every machine for the same object: husks by swarm index, everything else by hierarchy path.
         static string SceneKey(Component c)
@@ -635,7 +635,7 @@ namespace SpookyTogether
                 {
                     puppet.Hp = hp;
                     SpecimenInterface si = puppet.Obj.GetComponent<SpecimenInterface>();
-                    try { if (si != null) si.hp = hp; } catch { }
+                    try { if (si != null) si.hp = hp; } catch { }   // specimens without hp throw from the interface
                 }
                 // Re-applied on every snapshot: the client copy's own logic may switch animations, the host's wins.
                 if (animState != 0) { puppet.AnimState = animState; puppet.AnimTime = animTime; puppet.AnimDirty = true; }

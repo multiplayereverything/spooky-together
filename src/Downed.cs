@@ -47,7 +47,7 @@ namespace SpookyTogether
         {
             SpookyCharacterController player = SpookyCharacterController.GetInstance();
             downedKillscreen = null;
-            try { if (source != null) downedKillscreen = source.killscreenName; } catch { }
+            try { if (source != null) downedKillscreen = source.killscreenName; } catch { }   // a destroyed specimen's getter throws: no killscreen name
             LocallyDowned = true;
             downedBody = player != null ? player.transform.position : Vector3.zero;
             if (player != null && !downedLocks)

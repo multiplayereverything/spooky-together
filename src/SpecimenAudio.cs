@@ -13,8 +13,8 @@ namespace SpookyTogether
     {
         public static bool ApplyingSound;
         readonly Dictionary<int, int> hostObjectNet = new Dictionary<int, int>();   // tracked GameObject id -> net id
-        static readonly Dictionary<string, AudioClip> clipCache = new Dictionary<string, AudioClip>();
-        static float clipCacheBuiltAt = -100;
+        static readonly Dictionary<string, AudioClip> clipCache = new Dictionary<string, AudioClip>();   // process-scoped: audio clip lookup cache, rebuilt on a timer
+        static float clipCacheBuiltAt = -100;   // process-scoped: audio clip lookup cache, rebuilt on a timer
         int soundsThisSecond; float soundWindow;
         public int SoundsSent, SoundsPlayed, SoundsMuted;
 

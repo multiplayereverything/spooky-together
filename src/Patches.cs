@@ -8,8 +8,8 @@ namespace SpookyTogether
 {
     public static class ModHooks
     {
-        static HarmonyLib.Harmony harmony;
-        static int applied, failed;
+        static HarmonyLib.Harmony harmony;   // process-scoped: patches are applied once per process
+        static int applied, failed;   // process-scoped: patches are applied once per process
 
         public static void InstallPatches()
         {

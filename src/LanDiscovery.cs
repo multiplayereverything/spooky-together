@@ -52,7 +52,7 @@ namespace SpookyTogether
                 foreach (IPEndPoint target in lanTargets)
                 {
                     try { lanBeacon.Send(data, data.Length, target); }
-                    catch (SocketException) { }
+                    catch (SocketException) { }   // an adapter without broadcast: the other adapters still announce
                 }
             }
             catch (Exception ex) { Log("LAN beacon unavailable: " + ex.Message); if (lanBeacon != null) lanBeacon.Close(); lanBeacon = null; nextLanBeacon = now + 10; }
@@ -115,7 +115,7 @@ namespace SpookyTogether
             if (data == null || data.Length > 512 || from == null) return;
             string[] fields;
             try { fields = Encoding.UTF8.GetString(data).Split('\n'); }
-            catch (ArgumentException) { return; }
+            catch (ArgumentException) { return; }   // not our beacon: ignored
             int protocol, port, players;
             if (fields.Length != 8 || fields[0] != DiscoveryMagic || !int.TryParse(fields[1], out protocol) || fields[2].Length > 16 || fields[3].Length != 32
                 || !int.TryParse(fields[5], out port) || port < 1024 || port > 65535 || !int.TryParse(fields[6], out players) || players < 1 || players > 4) return;

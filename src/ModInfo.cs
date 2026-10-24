@@ -129,7 +129,7 @@ namespace ModRelay
                 if (!string.IsNullOrEmpty(CachePath))
                     File.WriteAllText(CachePath, "{\"servers\":" + servers.Trim() + ",\"mod\":" + mod.Trim() + "}", new UTF8Encoding(false));
             }
-            catch (Exception) { }
+            catch (Exception) { }   // the cache is optional: the live copy is already in use
             return true;
         }
 
@@ -144,7 +144,7 @@ namespace ModRelay
                 Snapshot s = Check(both["servers"], both["mod"], "cache", out why);
                 if (s != null) { current = s; Revision++; }
             }
-            catch (Exception) { }
+            catch (Exception) { }   // a missing or damaged cache just means a download next time
         }
 
         static string Download(string url, int timeoutMs)
@@ -173,9 +173,9 @@ namespace ModRelay
 
         // ---- checks (the same rules as tools/validate.py) ----
 
-        static readonly Regex IdRule = new Regex("^[a-z0-9][a-z0-9-]{0,31}$");
-        static readonly Regex VersionRule = new Regex("^[0-9]+(\\.[0-9]+){0,3}$");
-        static readonly Regex AddressRule = new Regex("^[A-Za-z0-9.-]{1,253}:[0-9]{1,5}$");
+        static readonly Regex IdRule = new Regex("^[a-z0-9][a-z0-9-]{0,31}$");   // process-scoped: constant pattern
+        static readonly Regex VersionRule = new Regex("^[0-9]+(\\.[0-9]+){0,3}$");   // process-scoped: constant pattern
+        static readonly Regex AddressRule = new Regex("^[A-Za-z0-9.-]{1,253}:[0-9]{1,5}$");   // process-scoped: constant pattern
 
         public Snapshot Build(string serversText, string modText, string source, out string why)
         {

@@ -14,8 +14,8 @@ namespace SpookyTogether
     public sealed partial class TogetherRuntime
     {
         public static bool ApplyingCutout;
-        static string forcedFront, forcedBack, forcedClip;
-        static FieldInfo cutoutDeployed;
+        static string forcedFront, forcedBack, forcedClip;   // call-scoped: set by ClientCutoutState, read during its Deploy, cleared in its finally
+        static FieldInfo cutoutDeployed;   // process-scoped: reflection cache
         readonly Dictionary<string, Material> materialCache = new Dictionary<string, Material>();
         float materialCacheAt = -100;
         public int CutoutsApplied;
@@ -69,6 +69,7 @@ namespace SpookyTogether
             string front = popped && cutout.frontFace != null && cutout.frontFace.sharedMaterial != null ? MaterialName(cutout.frontFace.sharedMaterial) : "";
             string back = popped && cutout.backFace != null && cutout.backFace.sharedMaterial != null ? MaterialName(cutout.backFace.sharedMaterial) : "";
             string clip = popped && cutout.audioSource != null && lastCutoutClip != null ? lastCutoutClip : "";
+            lastCutoutClip = null;   // a later pop without a sound must not reuse this one
             bool flipped = cutout.didFlip;
             Broadcast(Wire.Packet(Op.CutoutState, w => { Wire.Text(w, key); w.Write(popped); Wire.Text(w, front); Wire.Text(w, back); Wire.Text(w, clip); w.Write(flipped); }));
         }
@@ -76,7 +77,7 @@ namespace SpookyTogether
         static string MaterialName(Material m) { string n = m.name; return n.EndsWith(" (Instance)", StringComparison.Ordinal) ? n.Substring(0, n.Length - 11) : n; }
 
         // The cut-out's pop sound goes through AudioSource.PlayOneShot; remember the last one played by a cut-out.
-        static string lastCutoutClip;
+        static string lastCutoutClip;   // call-scoped: noted while a cut-out pops on the host, consumed by BroadcastCutout
         public static void NoteCutoutSound(AudioSource source, AudioClip clip)
         {
             TogetherRuntime rt = Instance;
@@ -107,7 +108,7 @@ namespace SpookyTogether
             ApplyingCutout = true;
             try { cutout.Deploy(); }
             catch (Exception ex) { Log("Cut-out pop failed: " + ex.Message); }
-            finally { ApplyingCutout = false; }
+            finally { ApplyingCutout = false; forcedFront = forcedBack = forcedClip = null; }
         }
 
         void ApplyCutoutLook(SpecimenOneController cutout)

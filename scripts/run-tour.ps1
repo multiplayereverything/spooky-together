@@ -98,7 +98,8 @@ if (!$early) {
         Start-Sleep 5
         python -I @probeArgs | Out-Null
         $probeResult = Get-Content $probe -Raw | ConvertFrom-Json
-        $waiting = @($probeResult.failures | Where-Object { $_ -match 'not seen|no client passed' }).Count
+        # A client still loading into the host's room is not done yet either: stopping then judged it "fell behind".
+        $waiting = @($probeResult.failures | Where-Object { $_ -match 'not seen|no client passed|fell behind' }).Count
         $failedCheck = @($probeResult.failures | Where-Object { $_ -match 'check .* failed' }).Count
         if ($Tour -eq 'allspecs') { $failedCheck = 0 }   # a sweep reports every specimen, not just the first failure
     } while (($waiting -gt 0) -and ($failedCheck -eq 0) -and ((Get-Date) -lt $deadline))

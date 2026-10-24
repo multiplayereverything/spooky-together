@@ -83,6 +83,7 @@ Settings are saved in `UserData/SpookyTogether.ini`. The server list uses UDP po
 
 ## Building and testing
 - **Build:** `scripts/build.ps1` builds both loaders into `artifacts/`. It needs the .NET Framework `csc.exe` and the loader DLLs under `deps/`.
+- **Source rules:** `python tests/rules-test.py` checks the message handlers, static-state resets, empty catches and version numbers in seconds, with no game or build.
 - **Test:** `scripts/run-tour.ps1 -Tour <name> [-Players 4]` starts up to four isolated lab copies, with windows hidden: a BepInEx host and MelonLoader/BepInEx clients. It runs one scripted tour, stops its own processes, and judges the run with `tests/verify-lab.py`. Results go to `artifacts/tests/<tour>-results.json`.
 
 | Tour | What it checks |

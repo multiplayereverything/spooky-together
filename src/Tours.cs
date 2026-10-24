@@ -17,7 +17,7 @@ namespace SpookyTogether
         float firstSpawnSeenAt = -1;
         bool tourDone;
         readonly Dictionary<string, bool> tourFlags = new Dictionary<string, bool>();
-        public static int TestHits;
+        public static int TestHits;   // lab-only
 
         bool Once(string name) { if (tourFlags.ContainsKey(name)) return false; tourFlags[name] = true; return true; }
 
@@ -306,7 +306,7 @@ namespace SpookyTogether
         GameObject sweepSpec;
         string sweepId;
         int sweepErrorsAt;
-        public static string SpecFilter = "base";
+        public static string SpecFilter = "base";   // lab-only
         int sweepRoomSeq = -1;
 
         static string SpecHome(string id)

@@ -10,14 +10,14 @@ namespace SpookyTogether
     // which tests/verify-lab.py reads to judge pass/fail, error growth, memory growth and desync.
     public sealed partial class TogetherRuntime
     {
-        public static bool LabMode;
-        static StreamWriter labLog;
-        static readonly object labLogGate = new object();
-        static int errorCount, modErrorCount, unexpectedErrorCount;
+        public static bool LabMode;   // lab-only
+        static StreamWriter labLog;   // lab-only
+        static readonly object labLogGate = new object();   // lab-only
+        static int errorCount, modErrorCount, unexpectedErrorCount;   // lab-only
         // Game errors that a single-player control run (no clients, no network) produces too, e.g. two Endless monsters
         // spawned outside the rooms they normally appear in, and hidden lab windows refusing a cursor lock.
         static readonly string[] knownGameErrors = { "EMKHMonster4Controller::UnpausedUpdate", "EMKHMonster6Controller::ActivateFromAccessory", "ClipCursor failed" };
-        static string lastError = "";
+        static string lastError = "";   // lab-only
         float nextMetric;
         float labJoinRetryAt;
         string labTour = "";

@@ -25,9 +25,9 @@ namespace SpookyTogether
 
     public sealed partial class TogetherRuntime : MonoBehaviour
     {
-        public const string ModVersion = "0.2.6";
-        public static TogetherRuntime Instance;
-        public static Action<string> Log = delegate { };
+        public const string ModVersion = "0.2.7";
+        public static TogetherRuntime Instance;   // process-scoped: the one runtime object
+        public static Action<string> Log = delegate { };   // process-scoped: logger hook set by the loader entry
         public Transport Network;
         public bool Hosting { get { return Network != null && Network.Hosting; } }
         public bool Active { get { return Network != null; } }
@@ -196,7 +196,7 @@ namespace SpookyTogether
             if (IsClient && runId > 0 && RunActive) { keptRunId = runId; keptRunMansion = runMansion; }
             if (Network != null)
             {
-                try { if (Connected) Broadcast(Wire.Packet(Op.Leave, null)); } catch { }
+                try { if (Connected) Broadcast(Wire.Packet(Op.Leave, null)); } catch { }   // best effort: the socket may already be gone
                 Network.Dispose();
             }
             Network = null;
@@ -352,7 +352,9 @@ namespace SpookyTogether
             for (int i = 0; i < messages.Count; i++)
             {
                 if (now - messageTimes[i] > 8) continue;
-                GUI.Label(new Rect(Screen.width - 420, y, 410, 40), messages[i], labelStyle); y += 22;
+                // a message that wraps takes its real height, so the next one starts below it instead of on top
+                float h = Mathf.Max(22, labelStyle.CalcHeight(new GUIContent(messages[i]), 410));
+                GUI.Label(new Rect(Screen.width - 420, y, 410, h), messages[i], labelStyle); y += h;
             }
         }
 

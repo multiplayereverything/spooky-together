@@ -29,8 +29,8 @@ namespace SpookyTogether
         readonly System.Random seeds = new System.Random();
         public static bool AllowStart, BypassTransfer;
 
-        public static HSMGameManager Hsm { get { try { return ServiceLocator.GetService<HSMGameManager>(); } catch { return null; } } }
-        static T Closest<T>() where T : HSMBaseState { HSMGameManager gm = Hsm; if (gm == null || gm.hsm == null) return null; try { return gm.ClosestState<T>(); } catch { return null; } }
+        public static HSMGameManager Hsm { get { try { return ServiceLocator.GetService<HSMGameManager>(); } catch { return null; } } }   // not registered yet at startup
+        static T Closest<T>() where T : HSMBaseState { HSMGameManager gm = Hsm; if (gm == null || gm.hsm == null) return null; try { return gm.ClosestState<T>(); } catch { return null; } }   // no such state active
         public bool RunActive { get { return Closest<HSMMansionState>() != null; } }
         public bool HasSeed { get { return Connected && hasSeed; } }
         public int RoomSeed { get { return currentSeed; } }
