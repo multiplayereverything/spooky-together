@@ -29,7 +29,9 @@ Request: "use it on spooky" (review the mod against the YokWare-multiplayer-game
 | `elevator` reruns after the early-stop fix | PASS, PASS | the failures were the early stop racing a loading client |
 | HUD screenshot | checked | a lab client with no host lists wrapped "actively refused" errors without overlap |
 
-Not run on 0.2.7: the full suite (soak, lag, campaigns, endings, reconnect). Not installed.
+Not run on 0.2.7: the full suite (soak, lag, campaigns, endings, reconnect).
+
+Installed into the real game on 2026-10-25 (SHA256 34982f3d…8830, the build the lab ran). BepInEx 5.4.23.5 was missing from the game folder and was restored from `deps/`; the game was not launched afterwards.
 
 ### Audit against the skill (not changed)
 - Already in place: guard flags cleared in `finally`, run-state checksum with full repair, version and game-hash check at hello, nearest-player retarget transpiler, host-decided cut-outs and seeded room randomness, a `reconnect` tour.
