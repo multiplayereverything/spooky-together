@@ -2,6 +2,8 @@
 
 Online (Steam) and LAN co-op for **Spooky's Jump Scare Mansion: HD Renovation** (Steam build, Unity 2021.3 Mono), for 2–4 players. Separate builds exist for BepInEx 5 and MelonLoader 0.7; each copy of the game uses only one loader. Players on different loaders can play together.
 
+Questions, bugs, or looking for people to play with? Join the [Multiplayer Everything Discord](https://discord.com/invite/P2MSSUf5GX).
+
 ## How to play
 1. Install the mod (below) on every PC. Everyone needs the same game version and the same mod version.
 2. Launch the game through Steam as usual.
@@ -124,3 +126,12 @@ Every run also judges:
 - entity desync;
 - room sequence;
 - the mod's own CPU time per frame (budget 2 ms).
+
+## Made with
+
+This project was made with the help of these tools:
+
+- [antislop-ui](https://github.com/miqdadbadjuber/anti-slop/tree/main/skills/antislop-ui)
+- [coop-anything](https://github.com/cranebeaker/coop-anything)
+- [REA](https://github.com/morluto/rea)
+- [Universal Modder](https://github.com/rehan-remade/universal-modder)
