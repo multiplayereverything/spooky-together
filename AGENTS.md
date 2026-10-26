@@ -19,12 +19,12 @@ Start with `handoff.md` (current state, next steps) and `README.md` (behaviour, 
 | `HSMBaseState.ExitState` | Detects the mansion ending. |
 | `GameManager.OnApplicationFocus` | No focus-loss pause while connected. |
 | `LockedDoorGroup`, `SelectiveExister`, `RoomController`, `RandomFlipZ`, `RandomYRot`, `LocalRoomControl.InitializeActive` | Per-room seeded `UnityEngine.Random`. |
-| `SpecimenManager.InstantiateSpecimenFromPrefab` (postfix) | Host: net id plus spawn broadcast. Client: its own spawn becomes a waiting host specimen or replaces a recent stand-in (`AdoptOwnSpawn`), else it is unpaired (removed after 6 s if never confirmed). Stand-ins wait 1.5 s after room ready. |
+| `SpecimenManager.InstantiateSpecimenFromPrefab` (postfix) | Host: net id plus spawn broadcast. Client: its own spawn becomes a waiting host specimen or replaces a recent stand-in (`AdoptOwnSpawn`), else it is unpaired (removed after 6 s if never confirmed). Stand-ins wait until 1.5 s after this game's own room is ready. |
 | `SpecimenManager.StartSpecimenRechase` / `EndSpecimen` | Clients do not roll rechases and do not remove host-driven specimens themselves. |
 | Transpiler on every specimen method calling `SpookyCharacterController.GetInstance()` (`Enemies.PatchSpecimenTargets`) | Host retargets to the nearest standing player through `TogetherRuntime.Target(this)`: direct `GetInstance().transform` reads and reads of a player kept in a local or field. |
 | `SpookyCharacterController.Hurt` (both overloads), `UnknownSpecimen1Controller.DoHit` | Host sends hits aimed at remote players to them. Clients ignore hits from host-driven specimens. |
 | `GameManager.ExitGame`, `ScareChairController.ChairKill` | Scares that quit the game or end everyone become a knock-down. |
-| `PersistenceData.SetKey` / `ClearKey` / `AddToInventory` / `RemoveFromInventory*` | Shared run state, relayed through the host; 10 s checksum plus full snapshot repair. |
+| `PersistenceData.SetKey` / `ClearKey` / `AddToInventory` / `RemoveFromInventory*` | Shared run state, relayed through the host; 10 s checksum plus full snapshot repair. Changes behind a client's pending snapshot are replayed on top of it. |
 | `PickUpItem`, `PickupComponent`, `WeaponPickupComponent` `.OnInteract`; `DoorComponent` / `LocalDoorComponent` `.Unlock` | Object state by scene key; weapon pickups arm everyone. |
 | `SendMessageOnHit.TakeHit`, `SpookyCharacterController.CurrentWeapon`, `SwingableWeaponConfig` / `M1WeaponConfig` `.DoHitTest` | Hit relay (specimens host-only), attacker's weapon during a replayed hit, swing display. |
 | `HSMGameRootState.GotoKillscreen` | Endings: the host broadcasts; a client's call becomes a request to the host. A client outside the run holds the ending for 30 s; the host's end-of-run after an ending takes a stranded client out. |

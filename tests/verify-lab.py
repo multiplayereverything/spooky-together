@@ -118,7 +118,9 @@ def main():
             if desync:
                 info["desync_max"] = max(desync)
                 info["desync_slope"] = round(slope(desync[len(desync) // 2:]), 3)
-                if slope(desync[len(desync) // 2:]) > 0.2:
+                # Worsening desync keeps growing to the end; a one-sample spike (a specimen teleporting or emerging,
+                # just under the 5 m snap) followed by 0 is not that, though it tilts a short run's slope.
+                if slope(desync[len(desync) // 2:]) > 0.2 and min(desync[-2:]) > 0.5:
                     failures.append(f"{role}: entity desync is worsening ({info['desync_slope']} m per 10 s)")
             if role == "host":
                 host_seq = info["max_seq"]

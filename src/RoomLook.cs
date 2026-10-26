@@ -15,6 +15,11 @@ namespace SpookyTogether
         int lookSeq = -1;
         string[] look;          // wall, wallLit, floor, floorLit, ceiling
         public int LookChecks;
+        // A re-skinning specimen's materials load with its prefab: a client that paints the room before its own copy of
+        // that specimen spawns cannot find them yet, so it looks again each second and repaints once they exist.
+        bool lookMissing;
+        int lookRetries;
+        float lookRetryAt;
 
         static string[] CurrentLook()
         {
@@ -53,7 +58,7 @@ namespace SpookyTogether
             string[] names = new string[5];
             for (int i = 0; i < 5; i++) names[i] = Wire.Text(reader, 200);
             bool changed = seq == lookSeq && look != null && string.Join("|", look) != string.Join("|", names);
-            lookSeq = seq; look = names;
+            lookSeq = seq; look = names; lookRetries = 0;
             // Already standing in that room: repaint now.
             if ((changed || seq == CurrentRoomSeq) && Closest<HSMRoomReadyState>() != null) RepaintRoom();
         }
@@ -65,7 +70,7 @@ namespace SpookyTogether
             string name = rt.look[slot];
             if (string.IsNullOrEmpty(name)) { result = null; return false; }
             Material m = rt.FindMaterial(name);
-            if (m == null) return true;
+            if (m == null) { rt.lookMissing = true; return true; }
             result = m;
             return false;
         }
@@ -75,6 +80,23 @@ namespace SpookyTogether
             foreach (UseWallMaterial c in Object.FindObjectsOfType<UseWallMaterial>()) { UseWallMaterial t = c; Guard(delegate { t.UpdateMaterial(); }); }
             foreach (UseFloorMaterial c in Object.FindObjectsOfType<UseFloorMaterial>()) { UseFloorMaterial t = c; Guard(delegate { t.UpdateMaterial(); }); }
             foreach (UseRoofMaterial c in Object.FindObjectsOfType<UseRoofMaterial>()) { UseRoofMaterial t = c; Guard(delegate { t.UpdateMaterial(); }); }
+        }
+
+        void LookRetryTick()
+        {
+            if (!lookMissing || !IsClient || look == null || lookSeq != CurrentRoomSeq || Mutant("lookretry")) return;
+            if (Closest<HSMRoomReadyState>() == null || Time.realtimeSinceStartup < lookRetryAt) return;
+            lookRetryAt = Time.realtimeSinceStartup + 1;
+            materialCacheAt = -100;
+            foreach (string name in look)
+            {
+                if (string.IsNullOrEmpty(name) || FindMaterial(name) != null) continue;
+                if (++lookRetries >= 30) { lookMissing = false; Log("Room look: " + name + " never loaded here; keeping this game's own material."); }
+                return;
+            }
+            lookMissing = false; lookRetries = 0;
+            RepaintRoom();
+            Log("Repainted the room once the host's materials loaded.");
         }
 
         // Lab: a second after each room is ready, the client's painted walls must carry the host's wall material.
@@ -87,6 +109,7 @@ namespace SpookyTogether
             if (Closest<HSMRoomReadyState>() == null) { lookCheckAt = -1; return; }
             if (lookCheckAt < 0) { lookCheckAt = Time.realtimeSinceStartup + 1.5f; return; }
             if (Time.realtimeSinceStartup < lookCheckAt) return;
+            if (lookMissing && Time.realtimeSinceStartup < lookCheckAt + 10) return;
             lookCheckedSeq = CurrentRoomSeq; lookCheckAt = -1;
             foreach (UseWallMaterial wall in Object.FindObjectsOfType<UseWallMaterial>())
             {

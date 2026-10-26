@@ -30,6 +30,9 @@ namespace SpookyTogether
             return true;
         }
 
+        // HSMLoadRoomState stays in the chain once the room is ready, so "loading" is a floor without a ready room.
+        static bool RoomLoading { get { return Closest<HSMFloorState>() != null && Closest<HSMRoomReadyState>() == null; } }
+
         void BroadcastEnding(string killscreen)
         {
             if (endingSent == killscreen && Time.realtimeSinceStartup - endingAt < 30) return;
@@ -55,17 +58,27 @@ namespace SpookyTogether
         {
             string killscreen = Wire.Text(reader, 200);
             endingSent = killscreen; lastEnding = killscreen; clientEndingAt = Time.realtimeSinceStartup;
-            pendingStartMansion = null; pendingRoom = null;
             // Lab (lateending): C2 takes the ending as if it were still loading into the run; C3 loses it entirely.
             if (labTour == "lateending" && SelfId == 3) { Log("Lab: ignoring the team's ending"); return; }
             bool labLate = labTour == "lateending" && SelfId == 2;
+            pendingStartMansion = null;
             if (labLate || !RunActive || Closest<HSMGameRootState>() == null)
             {
+                pendingRoom = null;
                 if (Mutant("endingrescue")) return;
                 pendingEnding = killscreen; pendingEndingAt = Time.realtimeSinceStartup;
                 Log("The team reached " + killscreen + " before this game was in the run; following once it is.");
                 return;
             }
+            // Mid room load the game refuses the killscreen push (it throws a frame later, outside any catch): let the
+            // room finish loading (keeping the room it is following), then go.
+            if (RoomLoading && !Mutant("endingload"))
+            {
+                pendingEnding = killscreen; pendingEndingAt = Time.realtimeSinceStartup;
+                Log("The team reached " + killscreen + " while this room loads; following once it has.");
+                return;
+            }
+            pendingRoom = null;
             ApplyEnding(killscreen);
         }
 
@@ -95,7 +108,7 @@ namespace SpookyTogether
             if (pendingEnding != null)
             {
                 if (now - pendingEndingAt > 30) { Log("Dropped the team's ending " + pendingEnding + ": this game never got into the run."); pendingEnding = null; }
-                else if (RunActive && Closest<HSMGameplayState>() != null) { string k = pendingEnding; pendingEnding = null; ApplyEnding(k); }
+                else if (RunActive && Closest<HSMGameplayState>() != null && !RoomLoading) { string k = pendingEnding; pendingEnding = null; ApplyEnding(k); }
             }
             if (endRunCheckAt > 0 && now >= endRunCheckAt)
             {

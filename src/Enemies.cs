@@ -449,7 +449,12 @@ namespace SpookyTogether
 
         const float StandInGrace = 1.5f;
         float roomReadyAt = -100;
-        public void NoteRoomReady() { roomReadyAt = Time.realtimeSinceStartup; }
+        int roomReadySeq = -1;
+        public void NoteRoomReady() { roomReadyAt = Time.realtimeSinceStartup; roomReadySeq = CurrentRoomSeq; }
+
+        // Stand-ins wait for this game's own room to be ready: a copy spawned while the room loads has no spawn door yet,
+        // and chasers such as EMKHMonster5 then emerge from a missing door every frame.
+        bool StandInWaits(float now) { return (roomReadySeq != CurrentRoomSeq && !Mutant("earlypuppet")) || now - roomReadyAt < StandInGrace; }
 
         public int OwnSpawnsAdopted, StandInsReplaced;   // lab counters
 
@@ -495,6 +500,7 @@ namespace SpookyTogether
             SpecimenManager manager = Specimens;
             if (manager == null) return;
             puppet.RespawnAt = Time.realtimeSinceStartup + 2f;
+            if (LabMode) Check("puppet.roomready", roomReadySeq == CurrentRoomSeq, puppet.SpecId + " in room " + CurrentRoomSeq + ", ready room " + roomReadySeq);
             if (spawnAnchor == null) { GameObject anchor = new GameObject("SpookyTogether SpawnAnchor"); Object.DontDestroyOnLoad(anchor); spawnAnchor = anchor.transform; }
             spawnAnchor.position = puppet.HasSnapshot ? puppet.Target : puppet.SpawnPos;
             spawnAnchor.rotation = puppet.HasSnapshot ? puppet.TargetRot : puppet.SpawnRot;
@@ -808,7 +814,7 @@ namespace SpookyTogether
             {
                 if (puppet.Obj == null)
                 {
-                    if (!sameRoom || now < puppet.RespawnAt || (puppet.SceneKey == null && !Mutant("pairing") && now - roomReadyAt < StandInGrace)) continue;
+                    if (!sameRoom || now < puppet.RespawnAt || (puppet.SceneKey == null && !Mutant("pairing") && StandInWaits(now))) continue;
                     if (puppet.SceneKey != null) { puppet.RespawnAt = now + 1; if (now < puppet.BindDeadline) TryBindScene(puppet); }
                     // Lost locally while the host still has it: respawn, at most every 2 s.
                     else SpawnPuppet(puppet);

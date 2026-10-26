@@ -25,7 +25,7 @@ namespace SpookyTogether
 
     public sealed partial class TogetherRuntime : MonoBehaviour
     {
-        public const string ModVersion = "0.2.9";
+        public const string ModVersion = "0.2.10";
         public static TogetherRuntime Instance;   // process-scoped: the one runtime object
         public static Action<string> Log = delegate { };   // process-scoped: logger hook set by the loader entry
         public Transport Network;
@@ -231,7 +231,7 @@ namespace SpookyTogether
             UpdateEndings();
             HostTick();
             if (Hosting && RunActive) { HostEnemyTick(); HostStateTick(); }
-            if (RunActive) { WeaponTick(); PropRefreshTick(); LabLookTick(); if (Time.frameCount % 30 == 0) ClampNegativeLocks(); }
+            if (RunActive) { WeaponTick(); PropRefreshTick(); LookRetryTick(); LabLookTick(); if (Time.frameCount % 30 == 0) ClampNegativeLocks(); }
             LabTick();
             LabUpdate();
             UpdateDowned();
@@ -511,6 +511,8 @@ namespace SpookyTogether
                         found.Append(mb.GetType().Name).Append('(').Append(mb.name).Append(mb.isActiveAndEnabled ? "" : ",off").Append(") ");
                 Log("Lab: no usable door in room seq " + CurrentRoomSeq + "; interactables: " + found);
             }
+            // Still none 12 s later (a door that opens through a puzzle, e.g. Rare_06): the floor's own next room.
+            else if (Hosting) { Log("Lab: still no usable door; taking the floor's next room"); DebugTravel(null, false); }
         }
 
         int AcceptedCount { get { int n = 0; foreach (Peer p in peers.Values) if (p.Accepted) n++; return n; } }

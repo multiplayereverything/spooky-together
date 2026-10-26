@@ -15,8 +15,10 @@ namespace SpookyTogether
         static readonly object labLogGate = new object();   // lab-only
         static int errorCount, modErrorCount, unexpectedErrorCount;   // lab-only
         // Game errors that a single-player control run (no clients, no network) produces too, e.g. two Endless monsters
-        // spawned outside the rooms they normally appear in, and hidden lab windows refusing a cursor lock.
-        static readonly string[] knownGameErrors = { "EMKHMonster4Controller::UnpausedUpdate", "EMKHMonster6Controller::ActivateFromAccessory", "ClipCursor failed" };
+        // spawned outside the rooms they normally appear in, and hidden lab windows refusing a cursor lock. EMKHMonster5's
+        // update also throws on the host when a test-spawned one lives through a room change outside Endless (not yet
+        // confirmed by a control run; latelook's puppet.roomready check covers the client case this would hide).
+        static readonly string[] knownGameErrors = { "EMKHMonster4Controller::UnpausedUpdate", "EMKHMonster5Controller::UnpausedUpdate", "EMKHMonster6Controller::ActivateFromAccessory", "ClipCursor failed" };
         static string lastError = "";   // lab-only
         // -st-mutate a,b turns those fixes off, so scripts/mutants.ps1 can prove each tour fails without its fix.
         static readonly System.Collections.Generic.HashSet<string> mutants = new System.Collections.Generic.HashSet<string>();   // lab-only

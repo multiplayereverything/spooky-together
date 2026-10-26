@@ -1,5 +1,36 @@
 # Spooky Together mod log
 
+## 0.2.10 (2026-10-27, pre-release with a known issue): late joiners and re-skinned rooms, protocol 9
+**Status:** published as a GitHub pre-release at the user's request, without further fixes or test runs. **Known issue:** the `takerbail` rerun still fails, because the ending hold below can stall when no room load follows (see `handoff.md`).
+
+Request: carry on after 0.2.9 and keep the lab suite green. The first full suite since 0.2.2 failed 3 of 24 tours, all on the late lab copy (c3). One was load; two were real bugs.
+
+### Fixed
+- **A newer key wiped by an older snapshot.** A client that starts the run late keeps the host's run snapshot until its first room loads. Key and item changes that arrived in between were applied first, then the older snapshot overwrote them, until the 10 s checksum repair. Changes that arrive behind a pending snapshot are now queued and replayed on top of it (full suite: `KH_Mansion` c3 `state.hash` with an empty state).
+- **Room look with a re-skinning specimen.** EMKHMonster5 (and Unknown Specimens 1 and 3) repaint the room with materials that load with the specimen's prefab. A client that painted the room before its own copy of the specimen existed could not find them, kept its own walls, and never repainted. It now looks for missing materials each second (up to 30 s) and repaints once they load (full suite: `enemies` c3 `room.look`; with the fix off, c1 and c2 fail too).
+- **Host specimens spawned while a room loads.** The stand-in wait used the time the previous room was ready, so a late joiner spawned the host's specimens during its room load. EMKHMonster5 then emerged from a missing door every frame. Stand-ins now wait until this game's own room is ready.
+- **An ending that arrives mid room load was lost.** The game refuses a killscreen push during a room transition and throws a frame later, outside the mod's catch; the client stayed in the run until the host's end-of-run took it out (full suite on 0.2.10: `takerbail`, where the host bails to Credits as the team arrives). The client now holds the ending, keeps loading the room it is following, and goes once that room is ready.
+- **A new run's checksum before its snapshot** compared the previous run's keys and logged a false mismatch. Clients skip the check until the new run has started here.
+
+### Added (testing)
+- **Tours:** `loadending` (the host sends Credits as soon as no client is still in room 2, i.e. while they load room 3), `chase` (Specimen 8 spawned next to the client farthest from the host must head for that client: an end-to-end check of the kept-player retarget), `latekey` (a key set right after the run snapshot), `latelook` (C3 joins 8 s late into a room EMKHMonster5 re-skinned; EM_Mansion).
+- **Mutation switches** (15 in all): `keyorder`, `lookretry`, `earlypuppet`, `endingload`; `cachedplayer` now maps to `chase`.
+- **Lab fixes from the 0.2.10 full suite:**
+  - `pairing`: the host waits 5 s after the team gathers, so the last client's tour is already watching when the first specimen arrives.
+  - The desync trend ignores a single spike: a run fails only if the slope rises and the last two samples stay above 0.5 m (`chase`, `latelook` failed on one 5 m sample at a spawn).
+  - The lab bot takes the floor's next room when a room has no usable door 12 s after the first try (`EM_Mansion` stopped in Rare_06).
+- **Known game error:** EMKHMonster5's update also throws on the host when a test-spawned one lives through a room change outside Endless. It is listed with EMKHMonster4's; `latelook`'s `puppet.roomready` check covers the client case it would otherwise hide.
+
+### Evidence (4 players, windows hidden; CPU about 90% with other labs running)
+| Run | Result | Notes |
+| --- | --- | --- |
+| Full suite on 0.2.9 | 21/24 | `ending` (c3 not in the run after 47 s: load), `enemies` (c3 look), `KH_Mansion` (c3 key) |
+| `latekey` | PASS | every client: "then 1 newer changes", `st_latekey=1` |
+| `chase` | PASS | destination 0.1 m from C1, 7.7 m from the host |
+| `latelook` | PASS | c3 repainted to CowWallMat, 0 errors |
+| `pairing` | PASS | after the stand-in change |
+| Mutants `keyorder`, `cachedplayer`, `lookretry`, `earlypuppet` | 4/4 caught | `st_latekey=0`; destination 8.7 m from C3, 0.0 m from the host; c1-c3 kept their own walls; `puppet.roomready` failed |
+
 ## 0.2.9 (2026-10-26): the five open audit items, protocol 9
 Request: fix the open audit items from the handoff, with tests.
 

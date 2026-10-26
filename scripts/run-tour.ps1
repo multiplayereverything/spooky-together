@@ -21,6 +21,10 @@ $tours = @{
     'furnace'      = @{ Seconds = 420; Expect = @('furnace.onekey','furnace.state') }
     'puzzles'      = @{ Seconds = 150; Expect = @('puzzle.once') }
     'lateending'   = @{ Seconds = 140; Expect = @('ending.Credits@host','ending.Credits@c1','ending.Credits@c2','ending.stranded.left@c3') }
+    'latekey'      = @{ Seconds = 120; Expect = @('client.latekey.kept') }
+    'latelook'     = @{ Seconds = 150; Expect = @('client.room.look', 'puppet.roomready@c3') }
+    'loadending'   = @{ Seconds = 140; Expect = @('ending.Credits') }
+    'chase'        = @{ Seconds = 150; Expect = @('chase.target@host') }
     'stuck'        = @{ Seconds = 150; Expect = @('locks.released@anyclient') }
     'cutouts'      = @{ Seconds = 420; Expect = @('client.cutout.side','client.cutout.look') }
     'dollprops'    = @{ Seconds = 260; Expect = @('client.props.real') }
@@ -51,11 +55,12 @@ $hostArgs = '-st-auto-start -st-auto-door'
 $clientArgs = if ($Tour -eq 'serverlist') { '-st-join-lan' } else { '-st-auto-door' }
 if ($Tour -in @('soak', 'mansion')) { $hostArgs += ' -st-soak-spawn' }
 if ($Tour -in @('soak', 'mansion', 'reconnect', 'takerbail', 'takerbad', 'takergood', 'cutouts')) { $hostArgs += ' -st-god'; $clientArgs += ' -st-god' }
+if ($Tour -eq 'latelook' -and !$Mansion) { $Mansion = 'EM_Mansion' }   # its unlit walls take EMKHMonster5's CowWallMat
 if ($Mansion) { $hostArgs += " -st-mansion $Mansion" }
 $tourArg = if ($tour -in @('soak','serverlist','mansion')) { '' } else { $Tour }
 if ($Lag -gt 0) { $hostArgs += " -st-lag $Lag"; $clientArgs += " -st-lag $Lag" }
 if ($Tour -eq 'allspecs') { $map = @{ 'base' = ''; 'em' = 'EM_Mansion'; 'kh' = 'KH_Mansion'; 'doll' = 'dollhouse' }; $f = if ($Mansion) { ($map.GetEnumerator() | Where-Object { $_.Value -eq $Mansion } | Select-Object -First 1).Key } else { 'base' }; $hostArgs += " -st-specs $f -st-god"; $clientArgs += ' -st-god'; }
-if ($Tour -in @('elevator', 'stuck', 'look', 'spec6', 'debug', 'pairing', 'puzzles')) { $hostArgs += ' -st-god'; $clientArgs += ' -st-god' }
+if ($Tour -in @('elevator', 'stuck', 'look', 'spec6', 'debug', 'pairing', 'puzzles', 'chase', 'latelook')) { $hostArgs += ' -st-god'; $clientArgs += ' -st-god' }
 if ($Tour -in @('dollprops', 'furnace')) { $hostArgs += ' -st-mansion dollhouse -st-god'; $clientArgs += ' -st-god' }
 if ($Mansion) { $out = Join-Path $modRoot "artifacts/tests/$Tour-$Mansion-results.json" }
 if ($Address -ne '127.0.0.1') { $out = Join-Path $modRoot ("artifacts/tests/$Tour-via-$Address" + $(if ($Lag -gt 0) { "-lag$Lag" } else { '' }) + "-results.json") }

@@ -46,19 +46,34 @@ namespace SpookyTogether
                 case "pairing": PairingTour(player, now); break;
                 case "furnace": FurnaceTour(now); break;
                 case "puzzles": PuzzlesTour(now); break;
+                case "chase": if (Hosting) ChaseTour(player, now); break;
+                case "latelook": if (Hosting && Once("latelook")) LateLookTour(player); break;
                 case "look": LookTour(); break;
                 case "spec6": Spec6Tour(now); break;
                 case "debug": DebugTour(now); break;
                 case "takerbail": case "takerbad": case "takergood": TakerTour(player, now); break;
                 case "lateending": if (Hosting && now >= tourAt && Once("ending")) { Log("Tour: host goes to Credits"); Closest<HSMGameRootState>().GotoKillscreen("Credits"); } break;
+                case "loadending": LoadEndingTour(now); break;
                 case "clientending": if (SelfId == 1 && now >= tourAt && Once("ending")) { Log("Tour: client asks for Credits"); Closest<HSMGameRootState>().GotoKillscreen("Credits"); } break;
             }
+        }
+
+        // The host moves the team to a third room and (Rooms.cs) sends Credits as it announces it; the host itself follows
+        // once its room is ready. Clients get the ending mid-load and must still reach it.
+        void LoadEndingTour(float now)
+        {
+            if (!Hosting || now < tourAt) return;
+            HSMFloorState floor = Closest<HSMFloorState>();
+            bool together = true;
+            foreach (Peer peer in peers.Values) if (peer.Accepted && (peer.RoomSeq != 2 || !peer.HasPose)) together = false;
+            if (CurrentRoomSeq == 2 && floor != null && together && Once("loadending.go")) { Log("Tour: moving the team on"); floor.TransferRequest(null, "End_05", true); }
+            else if (CurrentRoomSeq >= 3 && Closest<HSMRoomReadyState>() != null && labEndingAt < 0 && endingSent == "Credits" && Once("loadending.host")) Closest<HSMGameRootState>().GotoKillscreen("Credits");
         }
 
         // Clients and host both confirm an ending by being in a killscreen state.
         void TourEndingWatch()
         {
-            if (labTour != "ending" && labTour != "clientending" && labTour != "lateending" && !labTour.StartsWith("taker", StringComparison.Ordinal)) return;
+            if (labTour != "ending" && labTour != "clientending" && labTour != "lateending" && labTour != "loadending" && !labTour.StartsWith("taker", StringComparison.Ordinal)) return;
             if (Closest<HSMKillscreenState>() != null && Once("ending.reached"))
             {
                 Check("ending.reached", true, "role=" + (Hosting ? "host" : "client") + " ending=" + (lastEnding ?? "unknown"));
@@ -223,6 +238,7 @@ namespace SpookyTogether
         GameObject pairOwnA, pairOwnB, pairStandIn;
         string pairSpec;
 
+        float pairTogetherAt = -1;
         void PairingTour(SpookyCharacterController player, float now)
         {
             if (now < tourAt) return;
@@ -236,6 +252,9 @@ namespace SpookyTogether
                     bool together = true;
                     foreach (Peer peer in peers.Values) if (peer.Accepted && peer.RoomSeq != CurrentRoomSeq) together = false;
                     if (!together && now - tourWaitFrom < 40) return;
+                    // The last client to arrive starts its own tour 4 s after its room is ready: give it that time.
+                    if (pairTogetherAt < 0) pairTogetherAt = now;
+                    if (now - pairTogetherAt < 5) return;
                 }
                 if (tourStep == 0 || tourStep == 1)
                 {
@@ -665,6 +684,95 @@ namespace SpookyTogether
             }
             if (PropsTouched > 0 && Once("props.real")) Check("props.real", PropRefreshFailures == 0, "props refreshed=" + PropsTouched + " failures=" + PropRefreshFailures);
         }
+        // Specimen 8 keeps the player in a variable before steering its NavMesh agent, so its agent destination shows
+        // whom it really chases. The host walks away from the team, Specimen 8 spawns next to the client farthest from
+        // the host, and its destination must settle on that client, not on the host.
+        GameObject chaseSpec;
+        void ChaseTour(SpookyCharacterController player, float now)
+        {
+            if (now < tourAt) return;
+            SpecimenManager manager = Specimens;
+            if (manager == null) return;
+            if (tourStep == 0)
+            {
+                if (tourWaitFrom < 0) tourWaitFrom = now;
+                bool together = true;
+                foreach (Peer peer in peers.Values) if (peer.Accepted && (peer.RoomSeq != CurrentRoomSeq || !peer.HasPose)) together = false;
+                if (!together && now - tourWaitFrom < 40) return;
+                CharacterController body = player.GetComponent<CharacterController>();
+                if (body != null) { body.Move(player.transform.forward * 8f); if (FarthestPeerDistance(player) < 4f) body.Move(-player.transform.forward * 16f); }
+                tourStep = 1; tourAt = now + 3;
+                return;
+            }
+            if (tourStep == 1)
+            {
+                Peer target = null; float far = 0;
+                foreach (Peer peer in peers.Values)
+                {
+                    if (!peer.Accepted || !peer.HasPose || peer.RoomSeq != CurrentRoomSeq) continue;
+                    float d = Vector3.Distance(peer.ShownPosition, player.transform.position);
+                    if (d > far) { far = d; target = peer; }
+                }
+                if ((target == null || far < 4f) && ++chaseMoves < 6)
+                {
+                    // Walls can stop the move: try another direction until a client is far enough away.
+                    CharacterController body = player.GetComponent<CharacterController>();
+                    if (body != null) body.Move(Quaternion.Euler(0, 60f * chaseMoves, 0) * player.transform.forward * 8f);
+                    tourAt = now + 2;
+                    return;
+                }
+                if (target == null || far < 4f) { Check("chase.target", false, "no client 4 m from the host (farthest " + far.ToString("0.0") + " m)"); tourDone = true; return; }
+                Vector3 at = target.ShownPosition + (target.ShownPosition - player.transform.position).normalized * 1.5f;
+                UnityEngine.AI.NavMeshHit hit;
+                if (UnityEngine.AI.NavMesh.SamplePosition(at, out hit, 3f, UnityEngine.AI.NavMesh.AllAreas)) at = hit.position;
+                GameObject anchor = new GameObject("SpookyTogether TourAnchor");
+                anchor.transform.position = at;
+                try { chaseSpec = manager.StartSpecimen("SpecimenEight", anchor.transform, false); }
+                finally { Object.Destroy(anchor); }
+                Log("Tour: Specimen 8 spawned " + Vector3.Distance(at, target.ShownPosition).ToString("0.0") + " m from " + target.Name + ", " + Vector3.Distance(at, player.transform.position).ToString("0.0") + " m from the host");
+                chaseTarget = target.Id;
+                tourStep = 2; tourAt = now + 4;
+                return;
+            }
+            if (tourStep == 2)
+            {
+                Peer target; peers.TryGetValue(chaseTarget, out target);
+                UnityEngine.AI.NavMeshAgent agent = chaseSpec != null ? chaseSpec.GetComponent<UnityEngine.AI.NavMeshAgent>() : null;
+                if (agent == null || target == null) { Check("chase.target", false, "Specimen 8 or its client is gone (spec=" + (chaseSpec != null) + ")"); }
+                else
+                {
+                    float toClient = Vector3.Distance(agent.destination, target.ShownPosition), toHost = Vector3.Distance(agent.destination, player.transform.position);
+                    Check("chase.target", toClient < 2.5f && toHost > toClient + 2f, "destination " + toClient.ToString("0.0") + " m from " + target.Name + ", " + toHost.ToString("0.0") + " m from the host");
+                }
+                if (chaseSpec != null) { AllowEndSpecimen = true; try { manager.EndSpecimen(chaseSpec); } finally { AllowEndSpecimen = false; } }
+                tourDone = true;
+            }
+        }
+        int chaseTarget = -1, chaseMoves;
+
+        // EMKHMonster5 re-skins the room with materials that load with its prefab. The host spawns it while C3 is still
+        // held out of the run (Rooms.cs), so C3 paints the room before its own copy exists; its walls must still end up
+        // with the host's look (room.look@c3).
+        void LateLookTour(SpookyCharacterController player)
+        {
+            SpecimenManager manager = Specimens;
+            if (manager == null) return;
+            GameObject anchor = new GameObject("SpookyTogether TourAnchor");
+            anchor.transform.position = player.transform.position + player.transform.right * 6f;
+            GameObject spec;
+            try { spec = manager.StartSpecimen("EMKHMonster5", anchor.transform, true); }
+            finally { Object.Destroy(anchor); }
+            GiveRoomDoor(spec);
+            Log("Tour: EMKHMonster5 spawned to re-skin the room (" + (spec != null) + ")");
+        }
+
+        float FarthestPeerDistance(SpookyCharacterController player)
+        {
+            float far = 0;
+            foreach (Peer peer in peers.Values) if (peer.Accepted && peer.HasPose) far = Mathf.Max(far, Vector3.Distance(peer.ShownPosition, player.transform.position));
+            return far;
+        }
+
         // A puzzle segment whose event adds 1 to a key. The host meets its condition and runs it itself; every other
         // player's copy is met by the relayed key and replayed by PropRefresh. The key must end at 1 everywhere.
         PuzzleStateExister tourPuzzle;

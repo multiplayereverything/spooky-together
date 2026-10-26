@@ -122,6 +122,14 @@ namespace SpookyTogether
             Tell("The host started a run.");
         }
 
+        float lateLookUntil = -1;
+        bool LateLookHold()
+        {
+            if (pendingRoom == null || pendingRoom.Seq < 2) return true;
+            if (lateLookUntil < 0) lateLookUntil = Time.realtimeSinceStartup + 8;
+            return Time.realtimeSinceStartup < lateLookUntil;
+        }
+
         void ClientEndRun()
         {
             pendingStartMansion = null; pendingRoom = null; runMansion = null;
@@ -161,7 +169,7 @@ namespace SpookyTogether
                 if (!gameOver) rt.Tell("Run ended.");
             }
             if (rt.Hosting) rt.runMansion = null;
-            rt.RestoreOptions(); rt.pendingFullState = null; rt.endingSent = null;
+            rt.RestoreOptions(); rt.pendingFullState = null; rt.pendingDeltas.Clear(); rt.endingSent = null;
             rt.EndPuppets();
             rt.ResetEnemies();
             if (wasDowned) rt.SendStatus(false);
@@ -173,7 +181,9 @@ namespace SpookyTogether
             if (pendingStartMansion != null)
             {
                 HSMMenuState menu = Closest<HSMMenuState>();
-                if (menu != null)
+                // Lab (latelook): C3 joins the run late, 8 s after the host reached its second room.
+                bool labHold = LabMode && labTour == "latelook" && SelfId == 3 && LateLookHold();
+                if (menu != null && !labHold)
                 {
                     MansionConfig config = null;
                     AssetDataManager assets = AssetDataManager.GetInstance();
@@ -262,6 +272,10 @@ namespace SpookyTogether
             };
             lastRoom = info;
             if (info.Seq == 1) Broadcast(FullStatePacket());
+            // Lab: a key set right after the run's snapshot reaches every client before that snapshot is applied.
+            if (info.Seq == 1 && LabMode && labTour == "latekey" && save != null) save.SetKey("st_latekey", 1);
+            // Lab: the team's ending reaches every client the moment it starts loading the third room.
+            if (info.Seq == 3 && LabMode && labTour == "loadending") labEndingAt = Time.realtimeSinceStartup + 5f;
             CurrentRoomSeq = info.Seq; currentSeed = info.Seed; hasSeed = true;
             // Everyone revives in the next room, so nobody counts as down while it loads.
             foreach (Peer peer in peers.Values) peer.Downed = false;

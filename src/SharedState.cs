@@ -16,6 +16,9 @@ namespace SpookyTogether
         public static bool ApplyingState;
         public int ElevatorRides;
         byte[] pendingFullState;
+        // Key and item changes that arrive after a snapshot the client has not applied yet: they are newer than it, so
+        // they are replayed on top of it instead of being wiped by it at the next room load.
+        List<byte[]> pendingDeltas = new List<byte[]>();
         float nextStateHash;
         bool savedOptions, oldSpecimen, oldJumpScares;
 
@@ -59,6 +62,7 @@ namespace SpookyTogether
 
         void ApplyKey(BinaryReader reader, int from)
         {
+            if (QueueBehindSnapshot(reader)) return;
             string key = Wire.Text(reader, 200); bool cleared = reader.ReadBoolean(); int value = reader.ReadInt32();
             PersistenceData data = CurrentData;
             if (!SharedKey(key) || data == null || !RunActive) return;
@@ -71,6 +75,7 @@ namespace SpookyTogether
 
         void ApplyItem(BinaryReader reader, int from)
         {
+            if (QueueBehindSnapshot(reader)) return;
             byte kind = reader.ReadByte(); string item = Wire.Text(reader, 200);
             PersistenceData data = CurrentData;
             if (data == null || !RunActive) return;
@@ -85,6 +90,17 @@ namespace SpookyTogether
             finally { ApplyingState = false; }
             MarkPropsDirty();
             if (Hosting) Broadcast(Wire.Packet(Op.StateItem, w => { w.Write(kind); Wire.Text(w, item); }), from);
+        }
+
+        bool QueueBehindSnapshot(BinaryReader reader)
+        {
+            if (Hosting || pendingFullState == null || Mutant("keyorder")) return false;
+            byte[] copy = new byte[reader.BaseStream.Length];
+            long at = reader.BaseStream.Position;
+            reader.BaseStream.Position = 0; reader.BaseStream.Read(copy, 0, copy.Length);
+            reader.BaseStream.Position = at;
+            pendingDeltas.Add(copy);
+            return true;
         }
 
         // --- Full snapshot and checksum -----------------------------------------------------------------
@@ -135,8 +151,17 @@ namespace SpookyTogether
             });
         }
 
+        float labEndingAt = -1;
+
         void HostStateTick()
         {
+            if (labEndingAt > 0)
+            {
+                // Lab (loadending): as soon as no client is still in room 2 (a loading client reports room -1).
+                bool moved = true;
+                foreach (Peer peer in peers.Values) if (peer.Accepted && peer.RoomSeq == 2) moved = false;
+                if (moved || Time.realtimeSinceStartup >= labEndingAt) { labEndingAt = -1; Log("Tour: ending sent while the clients load room 3 (all moved: " + moved + ")"); BroadcastEnding("Credits"); }
+            }
             if (!RunActive || AcceptedCount == 0 || Time.realtimeSinceStartup < nextStateHash) return;
             nextStateHash = Time.realtimeSinceStartup + 10;
             int hash = StateHash(CurrentData);
@@ -146,7 +171,8 @@ namespace SpookyTogether
         void ClientStateHash(BinaryReader reader)
         {
             int hash = reader.ReadInt32();
-            if (!RunActive || CurrentRoomSeq < 0) return;
+            // A new run's checksum can arrive before its snapshot: the old run's keys are still here then.
+            if (!RunActive || CurrentRoomSeq < 0 || pendingStartMansion != null) return;
             int mine = StateHash(CurrentData);
             if (mine != hash) { Log("State checksum differs from the host; requesting a full copy."); SendToHost(Wire.Packet(Op.StateRequest, null)); }
             if (LabMode) Check("state.hash", mine == hash, "host=" + hash + " client=" + mine);
@@ -157,6 +183,7 @@ namespace SpookyTogether
             byte[] copy = new byte[reader.BaseStream.Length];
             reader.BaseStream.Position = 0; reader.BaseStream.Read(copy, 0, copy.Length);
             pendingFullState = copy;
+            pendingDeltas.Clear();
             if (RunActive && CurrentRoomSeq >= 0) ApplyPendingState();
         }
 
@@ -191,8 +218,16 @@ namespace SpookyTogether
                 }
                 finally { ApplyingState = false; }
                 MarkPropsDirty();
-                Log("Applied the host's run state: " + keys.Count + " keys, " + items.Count + " items.");
+                Log("Applied the host's run state: " + keys.Count + " keys, " + items.Count + " items" + (pendingDeltas.Count > 0 ? ", then " + pendingDeltas.Count + " newer changes." : "."));
             }
+            List<byte[]> deltas = new List<byte[]>(pendingDeltas);
+            pendingDeltas.Clear();
+            foreach (byte[] delta in deltas)
+                using (BinaryReader reader = new BinaryReader(new MemoryStream(delta)))
+                {
+                    if ((Op)reader.ReadByte() == Op.StateKey) ApplyKey(reader, 0); else ApplyItem(reader, 0);
+                }
+            if (LabMode && labTour == "latekey" && Once("latekey")) Check("latekey.kept", data.GetKey("st_latekey") == 1, "st_latekey=" + data.GetKey("st_latekey") + " after " + deltas.Count + " queued changes");
         }
 
         // The HUD indexes allInventoryItems for every held item and throws on an unknown id inside a room-ready task,
