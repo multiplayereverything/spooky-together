@@ -112,7 +112,7 @@ for name, text in sources.items():
 check("catches.explained", not bare, ", ".join(bare) or "every empty catch says why")
 
 # --- Mutants ---------------------------------------------------------------------------------------
-in_src = set(re.findall(r'Mutant\("(\w+)"\)', everything))
+in_src = set(re.findall(r'Mutant(?:Arg)?\("(\w+)"\)', everything))
 in_script = set(re.findall(r"^\s*'(\w+)'\s*=\s*'\w+'", read(os.path.join(ROOT, "scripts", "mutants.ps1")), re.M))
 check("mutants.listed", in_src == in_script and in_src,
       "src only: %s; mutants.ps1 only: %s" % (sorted(in_src - in_script), sorted(in_script - in_src)) if in_src != in_script

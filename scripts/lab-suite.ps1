@@ -2,10 +2,10 @@
 param([int]$Players = 4, [switch]$SkipSoak, [switch]$Quick)
 $ErrorActionPreference = 'Stop'
 $modRoot = Split-Path $PSScriptRoot -Parent
-$tours = @('enemies', 'state', 'axe', 'ending', 'clientending', 'takerbail', 'takerbad', 'takergood', 'dollprops', 'cutouts', 'elevator', 'stuck', 'serverlist', 'reconnect')
+$tours = @('enemies', 'state', 'axe', 'ending', 'clientending', 'takerbail', 'takerbad', 'takergood', 'dollprops', 'cutouts', 'elevator', 'stuck', 'serverlist', 'reconnect', 'pairing', 'furnace', 'puzzles', 'lateending')
 if (!$SkipSoak -and !$Quick) { $tours += 'soak' }
 # Quick: the essential sync checks only (about 15 minutes); the full run adds endurance, lag and every campaign.
-if ($Quick) { $tours = @('enemies', 'state', 'axe', 'clientending', 'takerbad', 'cutouts', 'elevator', 'stuck', 'look', 'debug', 'serverlist') }
+if ($Quick) { $tours = @('enemies', 'state', 'axe', 'clientending', 'takerbad', 'cutouts', 'elevator', 'stuck', 'look', 'debug', 'serverlist', 'pairing', 'furnace', 'puzzles', 'lateending') }
 $lines = @("Spooky Together lab suite, $Players players, $(Get-Date -Format s)")
 $failed = 0
 foreach ($tour in $tours) {

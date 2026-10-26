@@ -25,7 +25,7 @@ namespace SpookyTogether
 
     public sealed partial class TogetherRuntime : MonoBehaviour
     {
-        public const string ModVersion = "0.2.8";
+        public const string ModVersion = "0.2.9";
         public static TogetherRuntime Instance;   // process-scoped: the one runtime object
         public static Action<string> Log = delegate { };   // process-scoped: logger hook set by the loader entry
         public Transport Network;
@@ -49,7 +49,7 @@ namespace SpookyTogether
         int labShotSeq = -1;
         public float lastJoinAt;
         int labExpect, labSoakSeq, labSoakCount, labLocalCount, labDumpedSeq = -1;
-        bool labGod, labSoakSpawn, labMansionsLogged;
+        bool labGod, labSoakSpawn, labMansionsLogged, labRestartRun;
         string labMansion;
         float labShotAt;
         float labDoorAt = -1;
@@ -228,6 +228,7 @@ namespace SpookyTogether
             UpdateLanDiscovery();
             UpdateSteam();
             UpdateRooms();
+            UpdateEndings();
             HostTick();
             if (Hosting && RunActive) { HostEnemyTick(); HostStateTick(); }
             if (RunActive) { WeaponTick(); PropRefreshTick(); LabLookTick(); if (Time.frameCount % 30 == 0) ClampNegativeLocks(); }
@@ -371,6 +372,8 @@ namespace SpookyTogether
                         Address = game.Address; portText = game.Port.ToString(); StartJoin();
                         break;
                     }
+            // Retried (LeaveRun waits 3 s between tries): a run still loading can ignore the first request.
+            if (labRestartRun) { if (RunActive) LeaveRun(); else labRestartRun = false; }
             if (labAutoStart && Hosting && AcceptedCount > 0 && (AcceptedCount + 1 >= labExpect ? Time.realtimeSinceStartup - lastJoinAt > 8 : Time.realtimeSinceStartup - lastJoinAt > 90))
             {
                 HSMMenuState menu = Closest<HSMMenuState>();

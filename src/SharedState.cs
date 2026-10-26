@@ -260,6 +260,8 @@ namespace SpookyTogether
         void ApplyObjectUsed(BinaryReader reader, int from)
         {
             byte kind = reader.ReadByte(); string key = Wire.Text(reader, 600); string extra = Wire.Text(reader, 200);
+            // A client's furnace action runs on the host's furnace only; its own key writes then reach everyone.
+            if (kind == 7) { if (RunActive) ApplyFurnaceRequest(key, extra); return; }
             if (Hosting) Broadcast(Wire.Packet(Op.ObjectUsed, w => { w.Write(kind); Wire.Text(w, key); Wire.Text(w, extra); }), from);
             if (!RunActive) return;
             ApplyingState = true;

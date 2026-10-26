@@ -77,6 +77,7 @@ Only the host can open it; on a client F6 just shows a message.
 - **Taker boss attacks are per player.** Each player's copy of the boss throws its fireballs, hands, minions and pillars at that player, and they hurt that player. The host decides the boss's health, when it is open to hits, and the ending.
 - **Per-player state:** health, stamina, the flashlight and notes on screen are per player.
 - **Puzzle props:** a teammate's change shows at once on piano, furnace, barbed wire, doll pillars, hellroom candle icons, key-gated props and puzzle conditions. Other props update when you next enter the room.
+- **The Dollhouse furnace** answers a client's lever and prompts after a round trip to the host, so on a slow link they react a moment late.
 - **The AFK Taker** (Specimen 9) appears only for the player who idles.
 - **If the host disconnects,** clients keep playing alone; there is no host migration.
 - **Starting the exe directly** without Steam makes the game quit and relaunch through Steam. Launch it through Steam.
@@ -100,13 +101,17 @@ Settings are saved in `UserData/SpookyTogether.ini`. The LAN server list uses UD
 
 | Tour | What it checks |
 | --- | --- |
-| `enemies` | host spawn, client binding and tracking, retargeting, hit routing, host-only specimen hits, spawn/remove churn |
+| `enemies` | host spawn, client binding and tracking, retargeting (including specimens that keep the player in a variable first), hit routing, host-only specimen hits, spawn/remove churn |
 | `state` | keys and inventory from every player reach everyone; removals; `violence` |
 | `axe` | weapon grant, hit relay to every copy, held weapon and swings seen by teammates |
 | `ending` | host ending pulls everyone in |
 | `takerbail` / `takerbad` / `takergood` | the real Taker room scripts: specimens-off credits; the boss fight with a client reflecting and chopping, where `violence` picks BadEnd or GoodEnd |
 | `dollprops` | Dollhouse props (piano, furnace) refresh live on clients when the host changes their keys |
 | `clientending` | a client's ending request is carried out by the host for everyone |
+| `lateending` | an ending that reaches a client outside the run is applied once it is in; a client that lost the ending leaves the run when the host's run ends |
+| `pairing` | a client's own copy of a chaser (spawned by its room script) becomes the host's specimen, before or after a stand-in was made |
+| `furnace` | the host and two clients take the Dollhouse furnace key at the same moment: exactly one key results everywhere |
+| `puzzles` | a puzzle segment met by a teammate's change runs its events here for show only; its `AddKey` counts once, not once per player |
 | `serverlist` | clients find the host by LAN broadcast and join |
 | `reconnect` | two clients drop and rejoin three times mid-run; they resume without restarting and leave no avatars behind |
 | `soak` | 10 minutes in the base mansion, 4 players, real doors, chasers queued the way the game queues them |
@@ -118,7 +123,7 @@ Any tour accepts `-Lag <ms>`, which adds that one-way delay plus up to half agai
 
 Any tour except `serverlist` accepts `-Steam`. The host opens a real Steam lobby; clients find it in the Steam list and connect through Steam Networking Sockets. The lab copies share one Steam account, which can't connect to itself peer to peer, so they use the same Steam sockets over 127.0.0.1.
 
-**Mutation check:** `scripts/mutants.ps1` turns one fix off at a time (`-st-mutate`, lab only) and runs the tour that guards it. Every tour must fail without its fix: retargeting, hit routing, shared keys, weapon hits, elevator presses, stale locks.
+**Mutation check:** `scripts/mutants.ps1` turns one fix off at a time (`-st-mutate`, lab only) and runs the tour that guards it. Every tour must fail without its fix: retargeting (two kinds), hit routing, shared keys, weapon hits, elevator presses, stale locks, spawn pairing, the furnace, puzzle replays, missed endings.
 
 Every run also judges:
 - error count;

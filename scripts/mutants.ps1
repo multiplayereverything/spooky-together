@@ -7,10 +7,15 @@ $modRoot = Split-Path $PSScriptRoot -Parent
 $mutants = [ordered]@{
     'retarget'    = 'enemies'   # specimens chase the nearest standing player
     'hurtrouting' = 'enemies'   # a specimen's hit lands on the player it chases
+    'cachedplayer' = 'enemies'  # specimens that keep the player before measuring chase the nearest player too
     'keys'        = 'state'     # run keys reach every player
     'hits'        = 'axe'       # weapon hits reach every copy
     'elevator'    = 'elevator'  # a teammate's elevator press starts the ride for everyone
     'stalelocks'  = 'stuck'     # locks left by a room a teammate's door unloaded are released
+    'pairing'     = 'pairing'   # a client's own spawn becomes the host's specimen instead of being removed
+    'puzzlereplay' = 'puzzles'  # a replayed puzzle segment writes nothing, so its AddKey counts once
+    'endingrescue' = 'lateending' # an ending missed outside the run is applied later, and a stranded client leaves
+    'furnace'     = 'furnace'   # furnace actions re-read the shared state and run on the host, so one key results
 }
 $lines = @("Spooky Together mutation check, $Players players, $(Get-Date -Format s)")
 $survived = 0; $ran = 0

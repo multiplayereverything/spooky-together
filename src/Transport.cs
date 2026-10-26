@@ -298,7 +298,7 @@ namespace SpookyTogether
 
     public static class Wire
     {
-        public const int Version = 8;
+        public const int Version = 9;
         public static byte[] Packet(Op op, Action<BinaryWriter> write)
         {
             using (MemoryStream memory = new MemoryStream())

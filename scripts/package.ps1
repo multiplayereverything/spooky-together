@@ -1,5 +1,6 @@
 # Builds release ZIPs for friends: BepInEx (loader included) and MelonLoader (mod only). No game files are included.
 $ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
 $modRoot = Split-Path $PSScriptRoot -Parent
 $version = (Select-String -Path (Join-Path $modRoot 'src/Runtime.cs') -Pattern 'ModVersion = "([^"]+)"').Matches[0].Groups[1].Value
 $out = Join-Path $modRoot 'artifacts/release'
@@ -23,6 +24,14 @@ Copy-Item (Join-Path $modRoot 'README.md') (Join-Path $m 'README.md')
 foreach ($kind in @(@('bepinex', 'BepInEx'), @('melonloader', 'MelonLoader'))) {
     $zip = Join-Path $out "SpookyTogether-$($kind[1])-$version.zip"
     if (Test-Path $zip) { Remove-Item $zip }
-    Compress-Archive -Path (Join-Path $stage "$($kind[0])/*") -DestinationPath $zip
+    # Not Compress-Archive: Windows PowerShell 5 writes backslashes into entry names, which other unzip tools mangle.
+    $root = (Resolve-Path (Join-Path $stage $kind[0])).Path
+    $archive = [System.IO.Compression.ZipFile]::Open($zip, [System.IO.Compression.ZipArchiveMode]::Create)
+    try {
+        foreach ($file in Get-ChildItem -LiteralPath $root -Recurse -File -Force) {
+            $name = $file.FullName.Substring($root.Length + 1).Replace('\', '/')
+            [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $file.FullName, $name)
+        }
+    } finally { $archive.Dispose() }
     Write-Output "Packaged $zip"
 }

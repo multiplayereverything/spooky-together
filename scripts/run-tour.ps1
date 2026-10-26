@@ -4,7 +4,7 @@ param([Parameter(Mandatory)][string]$Tour, [int]$Players = 4, [int]$Seconds = 0,
 $ErrorActionPreference = 'Stop'
 $modRoot = Split-Path $PSScriptRoot -Parent
 $tours = @{
-    'enemies'      = @{ Seconds = 150; Expect = @('enemy.spawned@host','enemy.retarget@host','enemy.hurt.routed@host','enemy.churn.clean@host','enemy.hit.host@host','enemy.hit.local.skipped@anyclient','client.enemy.bound','client.enemy.tracking','client.enemy.cleanup','client.enemy.anim','client.enemy.anim.legacy','enemy.legacy.spawned@host','enemy.hurt.received@anyclient') }
+    'enemies'      = @{ Seconds = 150; Expect = @('enemy.spawned@host','enemy.retarget@host','enemy.hurt.routed@host','enemy.churn.clean@host','enemy.hit.host@host','enemy.hit.local.skipped@anyclient','client.enemy.bound','client.enemy.tracking','client.enemy.cleanup','client.enemy.anim','client.enemy.anim.legacy','enemy.legacy.spawned@host','enemy.hurt.received@anyclient','retarget.cached.Spec6Controller@host','retarget.cached.Spec8Controller@host','retarget.cached.HookedDollControl@host','retarget.cached.FrenzyControl@host','retarget.cached.NightmareController@host') }
     'state'        = @{ Seconds = 130;  Expect = @('state.keys','state.items','state.remove','state.violence','props.refresh') }
     'axe'          = @{ Seconds = 110;  Expect = @('axe.granted@host','axe.hit.relayed','client.axe.host.armed') }
     'ending'       = @{ Seconds = 100;  Expect = @('ending.Credits') }
@@ -17,6 +17,10 @@ $tours = @{
     'debug'        = @{ Seconds = 150; Expect = @('debug.locks', 'debug.tabs', 'debug.travel', 'client.debug.spawn.bound', 'debug.report@host') }
     'spec6'        = @{ Seconds = 150; Expect = @('client.spec6.screen') }
     'look'         = @{ Seconds = 150; Expect = @(); MinRooms = 5 }
+    'pairing'      = @{ Seconds = 200; Expect = @('pairing.host@host','client.pairing.adopted','client.pairing.replaced','client.pairing.single') }
+    'furnace'      = @{ Seconds = 420; Expect = @('furnace.onekey','furnace.state') }
+    'puzzles'      = @{ Seconds = 150; Expect = @('puzzle.once') }
+    'lateending'   = @{ Seconds = 140; Expect = @('ending.Credits@host','ending.Credits@c1','ending.Credits@c2','ending.stranded.left@c3') }
     'stuck'        = @{ Seconds = 150; Expect = @('locks.released@anyclient') }
     'cutouts'      = @{ Seconds = 420; Expect = @('client.cutout.side','client.cutout.look') }
     'dollprops'    = @{ Seconds = 260; Expect = @('client.props.real') }
@@ -51,8 +55,8 @@ if ($Mansion) { $hostArgs += " -st-mansion $Mansion" }
 $tourArg = if ($tour -in @('soak','serverlist','mansion')) { '' } else { $Tour }
 if ($Lag -gt 0) { $hostArgs += " -st-lag $Lag"; $clientArgs += " -st-lag $Lag" }
 if ($Tour -eq 'allspecs') { $map = @{ 'base' = ''; 'em' = 'EM_Mansion'; 'kh' = 'KH_Mansion'; 'doll' = 'dollhouse' }; $f = if ($Mansion) { ($map.GetEnumerator() | Where-Object { $_.Value -eq $Mansion } | Select-Object -First 1).Key } else { 'base' }; $hostArgs += " -st-specs $f -st-god"; $clientArgs += ' -st-god'; }
-if ($Tour -in @('elevator', 'stuck', 'look', 'spec6', 'debug')) { $hostArgs += ' -st-god'; $clientArgs += ' -st-god' }
-if ($Tour -eq 'dollprops') { $hostArgs += ' -st-mansion dollhouse -st-god'; $clientArgs += ' -st-god' }
+if ($Tour -in @('elevator', 'stuck', 'look', 'spec6', 'debug', 'pairing', 'puzzles')) { $hostArgs += ' -st-god'; $clientArgs += ' -st-god' }
+if ($Tour -in @('dollprops', 'furnace')) { $hostArgs += ' -st-mansion dollhouse -st-god'; $clientArgs += ' -st-god' }
 if ($Mansion) { $out = Join-Path $modRoot "artifacts/tests/$Tour-$Mansion-results.json" }
 if ($Address -ne '127.0.0.1') { $out = Join-Path $modRoot ("artifacts/tests/$Tour-via-$Address" + $(if ($Lag -gt 0) { "-lag$Lag" } else { '' }) + "-results.json") }
 elseif ($Lag -gt 0) { $out = Join-Path $modRoot ("artifacts/tests/$Tour" + $(if ($Mansion) { "-$Mansion" } else { '' }) + "-lag$Lag-results.json") }

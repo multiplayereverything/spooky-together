@@ -9,10 +9,12 @@ namespace SpookyTogether
 {
     // Room props read the shared keys only when a room becomes ready. When a teammate changes one (plays the piano,
     // opens the furnace, cuts the wire), the props in the room you are standing in are refreshed right away.
-    // Only refreshes that just set visibility from keys are re-run; puzzle conditions fire only when newly met.
+    // Only refreshes that just set visibility from keys are re-run; puzzle conditions fire only when newly met, and only
+    // for show: the machine whose action met them already wrote (and relayed) their keys.
     public sealed partial class TogetherRuntime
     {
         float propsDirtyAt = -1;
+        public static bool PuzzleReplay;   // call-scoped: set around a replayed puzzle segment, cleared in its finally
         public int PropRefreshes, PropRefreshFailures, PropsTouched;
         readonly Dictionary<int, HashSet<int>> puzzleSegmentsMet = new Dictionary<int, HashSet<int>>();
         static readonly Dictionary<string, MethodInfo> propMethods = new Dictionary<string, MethodInfo>();   // process-scoped: reflection cache
@@ -61,9 +63,35 @@ namespace SpookyTogether
                     HashSet<int> met;
                     if (!puzzleSegmentsMet.TryGetValue(puzzle.GetInstanceID(), out met)) puzzleSegmentsMet[puzzle.GetInstanceID()] = met = new HashSet<int>();
                     for (int i = 0; i < puzzle.segments.Length; i++)
-                        if (!met.Contains(i) && puzzle.segments[i].condition.Evaluate()) { met.Add(i); puzzle.segments[i].onConditionEvents.Invoke(); }
+                        if (!met.Contains(i) && puzzle.segments[i].condition.Evaluate()) { met.Add(i); ReplaySegment(puzzle.segments[i]); }
                 });
             }
+        }
+
+        // A teammate's change met this segment here too: run its events for what they show, without their key and
+        // inventory writes (PersistenceData's writes are skipped while PuzzleReplay is set). Otherwise each player's copy
+        // wrote them again: an AddKey ran once per player.
+        void ReplaySegment(PuzzleStateExister.PuzzleSegment segment)
+        {
+            if (Mutant("puzzlereplay")) { segment.onConditionEvents.Invoke(); return; }
+            bool wasApplying = ApplyingState;
+            PuzzleReplay = true; ApplyingState = true;
+            try { segment.onConditionEvents.Invoke(); }
+            finally { PuzzleReplay = false; ApplyingState = wasApplying; }
+            PuzzleReplays++;
+        }
+        public int PuzzleReplays;
+
+        // The game ran a puzzle's conditions itself (an interaction calls RunConditions): those segments are met here,
+        // so the next refresh doesn't fire them a second time.
+        public static void AfterRunConditions(PuzzleStateExister puzzle)
+        {
+            TogetherRuntime rt = Instance;
+            if (rt == null || !rt.Connected || puzzle == null || puzzle.segments == null) return;
+            HashSet<int> met;
+            if (!rt.puzzleSegmentsMet.TryGetValue(puzzle.GetInstanceID(), out met)) rt.puzzleSegmentsMet[puzzle.GetInstanceID()] = met = new HashSet<int>();
+            for (int i = 0; i < puzzle.segments.Length; i++)
+                try { if (puzzle.segments[i].condition.Evaluate()) met.Add(i); } catch { }   // a condition on an unloaded object throws: counts as not met
         }
 
         // Seeds the "already met" puzzle segments when a room loads, so a refresh only fires what a teammate changed.

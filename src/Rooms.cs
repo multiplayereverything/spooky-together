@@ -72,6 +72,14 @@ namespace SpookyTogether
         {
             TogetherRuntime rt = Instance;
             if (rt == null || !rt.Hosting || mansionConfig == null) return;
+            // Lab: hidden lab windows can still take controller or keyboard input and start a run from the menu. A tour
+            // that needs another mansion goes back to the menu and starts its own.
+            if (LabMode && rt.labMansion != null && mansionConfig.uniqueIdentifier != rt.labMansion)
+            {
+                Log("Lab: " + mansionConfig.uniqueIdentifier + " started without the lab; going back for " + rt.labMansion);
+                rt.labAutoStart = true; rt.labRestartRun = true;
+                return;
+            }
             rt.runId++; rt.hostSeq = 0; rt.lastRoom = null; rt.runMansion = mansionConfig.uniqueIdentifier;
             rt.ResetDowned();
             foreach (Peer peer in rt.peers.Values) { peer.Downed = false; peer.RoomSeq = -1; }
@@ -116,8 +124,11 @@ namespace SpookyTogether
 
         void ClientEndRun()
         {
-            Tell("The host left the run.");
             pendingStartMansion = null; pendingRoom = null; runMansion = null;
+            // Right after an ending the killscreen is taking this game out of the run itself (it may not have yet this
+            // frame): check in 10 s instead, and leave then if it is still in the run.
+            if (Time.realtimeSinceStartup - clientEndingAt < 15) { if (!Mutant("endingrescue")) endRunCheckAt = Time.realtimeSinceStartup + 10; return; }
+            Tell("The host left the run.");
             if (RunActive) LeaveRun();
         }
 
@@ -143,10 +154,11 @@ namespace SpookyTogether
             rt.CurrentRoomSeq = -1; rt.hasSeed = false; rt.waitingForHost = false;
             bool wasDowned = rt.LocallyDowned, gameOver = rt.gameOverSent;
             rt.ResetDowned();
-            if (rt.Hosting && rt.runMansion != null && !gameOver)
+            // Also after an ending: a client that missed the ending is then told the run is over.
+            if (rt.Hosting && rt.runMansion != null)
             {
                 rt.Broadcast(Wire.Packet(Op.EndRun, null));
-                rt.Tell("Run ended.");
+                if (!gameOver) rt.Tell("Run ended.");
             }
             if (rt.Hosting) rt.runMansion = null;
             rt.RestoreOptions(); rt.pendingFullState = null; rt.endingSent = null;

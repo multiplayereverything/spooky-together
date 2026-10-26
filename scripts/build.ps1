@@ -15,7 +15,7 @@ if (!$gameRoot) { throw 'The game folder was not found. Pass -GameDir or set $en
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
 if (!(Test-Path -LiteralPath $compiler)) { throw 'The .NET Framework C# compiler is required.' }
 $managed = Join-Path $gameRoot 'SpookyUnity_Data/Managed'
-$common = @('Transport.cs','SteamNet.cs','SteamLobby.cs','Runtime.cs','Net.cs','Rooms.cs','Avatars.cs','Downed.cs','LanDiscovery.cs','Enemies.cs','SharedState.cs','Combat.cs','Endings.cs','PropRefresh.cs','SpecimenAudio.cs','Cutouts.cs','StaleLocks.cs','RoomLook.cs','DebugMenu.cs','Lab.cs','Tours.cs','Patches.cs') | ForEach-Object { Join-Path $modRoot "src/$_" }
+$common = @('Transport.cs','SteamNet.cs','SteamLobby.cs','Furnace.cs','Runtime.cs','Net.cs','Rooms.cs','Avatars.cs','Downed.cs','LanDiscovery.cs','Enemies.cs','SharedState.cs','Combat.cs','Endings.cs','PropRefresh.cs','SpecimenAudio.cs','Cutouts.cs','StaleLocks.cs','RoomLook.cs','DebugMenu.cs','Lab.cs','Tours.cs','Patches.cs') | ForEach-Object { Join-Path $modRoot "src/$_" }
 $references = @((Join-Path $managed 'Assembly-CSharp.dll'), (Join-Path $managed 'Rewired_Core.dll'), (Join-Path $managed 'com.rlabrecque.steamworks.net.dll')) + @(Get-ChildItem -LiteralPath $managed -Filter 'UnityEngine*.dll' | ForEach-Object FullName)
 $netstandard = Join-Path $managed 'netstandard.dll'
 if (Test-Path -LiteralPath $netstandard) { $references += $netstandard }

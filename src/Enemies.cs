@@ -26,6 +26,8 @@ namespace SpookyTogether
             public Vector3 SpawnPos; public Quaternion SpawnRot; public bool Rechase; public float RespawnAt;
             public int Hp; public string SceneKey; public float BindDeadline;
             public Vector3 Velocity; public float TargetAt; public bool DoorPending;
+            // A copy this client spawned only because the host's arrived first; the client's own copy replaces it.
+            public bool StandIn; public float StandInAt;
             public Animator Anim; public Animation Legacy; public bool AnimLooked; public int AnimState; public float AnimTime; public bool AnimDirty;
         }
 
@@ -151,25 +153,88 @@ namespace SpookyTogether
             return proxy;
         }
 
-        static IEnumerable<CodeInstruction> RetargetTranspiler(IEnumerable<CodeInstruction> instructions)
+        // Rewritten reads of a kept player per specimen type, for the lab's retarget.cached check.
+        static readonly Dictionary<string, int> retargetCached = new Dictionary<string, int>();   // process-scoped: filled once while patching
+
+        static IEnumerable<CodeInstruction> RetargetTranspiler(IEnumerable<CodeInstruction> instructions, MethodBase original)
         {
             MethodInfo getInstance = AccessTools.Method(typeof(SpookyCharacterController), "GetInstance");
             MethodInfo getTransform = AccessTools.PropertyGetter(typeof(Component), "transform");
             MethodInfo target = AccessTools.Method(typeof(TogetherRuntime), "Target");
+            IList<LocalVariableInfo> locals = null;
+            try { MethodBody body = original.GetMethodBody(); if (body != null) locals = body.LocalVariables; } catch (Exception) { }   // no body: only the direct pattern applies
+            bool cached = !MutantArg("cachedplayer");
+            int rewritten = 0, cachedReads = 0;
             List<CodeInstruction> list = new List<CodeInstruction>(instructions);
             for (int i = 0; i < list.Count - 1; i++)
             {
-                if (list[i].opcode == OpCodes.Call && Equals(list[i].operand, getInstance)
-                    && (list[i + 1].opcode == OpCodes.Callvirt || list[i + 1].opcode == OpCodes.Call) && Equals(list[i + 1].operand, getTransform))
+                bool readsTransform = (list[i + 1].opcode == OpCodes.Callvirt || list[i + 1].opcode == OpCodes.Call) && Equals(list[i + 1].operand, getTransform);
+                if (!readsTransform) continue;
+                if (list[i].opcode == OpCodes.Call && Equals(list[i].operand, getInstance))
                 {
                     CodeInstruction self = new CodeInstruction(OpCodes.Ldarg_0);
                     self.labels.AddRange(list[i].labels); self.blocks.AddRange(list[i].blocks);
                     list[i] = self;
                     list[i + 1] = new CodeInstruction(OpCodes.Call, target);
-                    i++;
+                    i++; rewritten++;
+                }
+                else if (cached && LoadsPlayer(list[i], locals))
+                {
+                    // The player kept in a local or field (Spec6, Spec8, HookedDoll, Frenzy, Nightmare keep it before
+                    // measuring): leave the load (it may be a branch target), drop its value, and ask Target instead.
+                    list[i + 1] = new CodeInstruction(OpCodes.Call, target);
+                    list.Insert(i + 1, new CodeInstruction(OpCodes.Pop));
+                    list.Insert(i + 2, new CodeInstruction(original.IsStatic ? OpCodes.Ldnull : OpCodes.Ldarg_0));
+                    i += 3; rewritten++; cachedReads++;
                 }
             }
+            if (cachedReads > 0)
+            {
+                Type owner = original.DeclaringType;
+                while (owner != null && owner.DeclaringType != null) owner = owner.DeclaringType;
+                string name = owner != null ? owner.Name : "?";
+                int count; retargetCached.TryGetValue(name, out count); retargetCached[name] = count + cachedReads;
+            }
             return list;
+        }
+
+        static bool LoadsPlayer(CodeInstruction ci, IList<LocalVariableInfo> locals)
+        {
+            OpCode op = ci.opcode;
+            if (op == OpCodes.Ldfld || op == OpCodes.Ldsfld) { FieldInfo f = ci.operand as FieldInfo; return f != null && f.FieldType == typeof(SpookyCharacterController); }
+            int index = -1;
+            if (op == OpCodes.Ldloc_0) index = 0; else if (op == OpCodes.Ldloc_1) index = 1; else if (op == OpCodes.Ldloc_2) index = 2; else if (op == OpCodes.Ldloc_3) index = 3;
+            else if (op == OpCodes.Ldloc_S || op == OpCodes.Ldloc)
+            {
+                LocalBuilder builder = ci.operand as LocalBuilder;
+                if (builder != null) return builder.LocalType == typeof(SpookyCharacterController);
+                if (ci.operand is byte) index = (byte)ci.operand; else if (ci.operand is int) index = (int)ci.operand; else if (ci.operand is short) index = (short)ci.operand;
+            }
+            return index >= 0 && locals != null && index < locals.Count && locals[index].LocalType == typeof(SpookyCharacterController);
+        }
+
+        // Patching runs before the lab reads its arguments, so a mutation switch for a transpiler reads them itself.
+        static bool MutantArg(string name)
+        {
+            string[] args = Environment.GetCommandLineArgs();
+            bool lab = false, hit = false;
+            for (int i = 0; i < args.Length; i++)
+            {
+                if (args[i] == "-st-lab") lab = true;
+                if (args[i] == "-st-mutate" && i + 1 < args.Length && Array.IndexOf(args[i + 1].Split(','), name) >= 0) hit = true;
+            }
+            return lab && hit;
+        }
+
+        // Lab: every specimen that keeps the player before measuring must have had those reads rewritten.
+        void CheckCachedRetarget()
+        {
+            string[] cachedPlayer = { "Spec6Controller", "Spec8Controller", "HookedDollControl", "FrenzyControl", "NightmareController" };
+            foreach (string type in cachedPlayer)
+            {
+                int reads; retargetCached.TryGetValue(type, out reads);
+                Check("retarget.cached." + type, reads > 0, "rewritten reads of the kept player=" + reads);
+            }
         }
 
         // Patches every instance method of specimen code (and its iterator/closure classes) that reads the player transform.
@@ -324,9 +389,10 @@ namespace SpookyTogether
             if (spawningForNet > 0)
             {
                 Puppet puppet;
-                if (rt.puppets.TryGetValue(spawningForNet, out puppet)) rt.Bind(puppet, spec);
+                if (rt.puppets.TryGetValue(spawningForNet, out puppet)) { rt.Bind(puppet, spec); puppet.StandIn = true; puppet.StandInAt = Time.realtimeSinceStartup; }
                 return;
             }
+            if (!Mutant("pairing") && rt.AdoptOwnSpawn(spec, config.uniqueId)) return;
             rt.unpaired.Add(new Unpaired { Obj = spec, SpecId = config.uniqueId, At = Time.realtimeSinceStartup, Seq = rt.CurrentRoomSeq });
         }
 
@@ -376,7 +442,46 @@ namespace SpookyTogether
                     return;
                 }
             }
-            if (RunActive) SpawnPuppet(puppet);
+            // No copy yet: the room script here may still spawn its own (AdoptOwnSpawn). The update loop spawns a stand-in
+            // once this client is in the host's room and the room has been ready a moment.
+            puppet.RespawnAt = Time.realtimeSinceStartup + (Mutant("pairing") ? 0f : StandInGrace);
+        }
+
+        const float StandInGrace = 1.5f;
+        float roomReadyAt = -100;
+        public void NoteRoomReady() { roomReadyAt = Time.realtimeSinceStartup; }
+
+        public int OwnSpawnsAdopted, StandInsReplaced;   // lab counters
+
+        // The host's spawn often arrives before this client's room script spawns its own copy. That own copy is the one
+        // the room script holds, so it becomes the host's specimen: bound to a host specimen still waiting for a copy, or
+        // replacing a stand-in spawned for it in the last 10 s.
+        bool AdoptOwnSpawn(GameObject spec, string specId)
+        {
+            Puppet waiting = null, standIn = null;
+            float now = Time.realtimeSinceStartup;
+            foreach (Puppet p in puppets.Values)
+            {
+                if (p.SceneKey != null || p.SpecId != specId) continue;
+                if (p.Obj == null && waiting == null) waiting = p;
+                else if (p.Obj != null && p.StandIn && now - p.StandInAt < 10f && standIn == null) standIn = p;
+            }
+            if (waiting != null)
+            {
+                Bind(waiting, spec);
+                OwnSpawnsAdopted++;
+                Log("Own " + specId + " is the host's specimen " + waiting.NetId);
+                return true;
+            }
+            if (standIn == null) return false;
+            GameObject old = standIn.Obj;
+            puppetObjects.Remove(old.GetInstanceID());
+            RemoveLocalSpecimen(old);
+            standIn.StandIn = false;
+            Bind(standIn, spec);
+            StandInsReplaced++;
+            Log("Own " + specId + " replaces the stand-in for the host's specimen " + standIn.NetId);
+            return true;
         }
 
         static Quaternion Normalised(Quaternion q)
@@ -703,7 +808,7 @@ namespace SpookyTogether
             {
                 if (puppet.Obj == null)
                 {
-                    if (!sameRoom || now < puppet.RespawnAt) continue;
+                    if (!sameRoom || now < puppet.RespawnAt || (puppet.SceneKey == null && !Mutant("pairing") && now - roomReadyAt < StandInGrace)) continue;
                     if (puppet.SceneKey != null) { puppet.RespawnAt = now + 1; if (now < puppet.BindDeadline) TryBindScene(puppet); }
                     // Lost locally while the host still has it: respawn, at most every 2 s.
                     else SpawnPuppet(puppet);

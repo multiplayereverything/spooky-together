@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using UnityEngine;
 using Object = UnityEngine.Object;
 
@@ -42,10 +43,14 @@ namespace SpookyTogether
                 case "allspecs": if (Hosting) HostAllSpecs(player, now); else ClientAllSpecs(now); break;
                 case "elevator": ElevatorTour(now); break;
                 case "stuck": StuckTour(now); break;
+                case "pairing": PairingTour(player, now); break;
+                case "furnace": FurnaceTour(now); break;
+                case "puzzles": PuzzlesTour(now); break;
                 case "look": LookTour(); break;
                 case "spec6": Spec6Tour(now); break;
                 case "debug": DebugTour(now); break;
                 case "takerbail": case "takerbad": case "takergood": TakerTour(player, now); break;
+                case "lateending": if (Hosting && now >= tourAt && Once("ending")) { Log("Tour: host goes to Credits"); Closest<HSMGameRootState>().GotoKillscreen("Credits"); } break;
                 case "clientending": if (SelfId == 1 && now >= tourAt && Once("ending")) { Log("Tour: client asks for Credits"); Closest<HSMGameRootState>().GotoKillscreen("Credits"); } break;
             }
         }
@@ -53,7 +58,7 @@ namespace SpookyTogether
         // Clients and host both confirm an ending by being in a killscreen state.
         void TourEndingWatch()
         {
-            if (labTour != "ending" && labTour != "clientending" && !labTour.StartsWith("taker", StringComparison.Ordinal)) return;
+            if (labTour != "ending" && labTour != "clientending" && labTour != "lateending" && !labTour.StartsWith("taker", StringComparison.Ordinal)) return;
             if (Closest<HSMKillscreenState>() != null && Once("ending.reached"))
             {
                 Check("ending.reached", true, "role=" + (Hosting ? "host" : "client") + " ending=" + (lastEnding ?? "unknown"));
@@ -68,6 +73,7 @@ namespace SpookyTogether
             SpecimenManager manager = Specimens;
             if (tourStep == 0)
             {
+                CheckCachedRetarget();
                 string id = PickSpecimen();
                 if (id == null) { Check("enemy.spawned", false, "no specimen configs"); tourDone = true; return; }
                 GameObject anchor = new GameObject("SpookyTogether TourAnchor");
@@ -207,6 +213,95 @@ namespace SpookyTogether
                 Log("Tour: sounds played from host=" + SoundsPlayed + " local one-shots muted=" + SoundsMuted);
                 tourDone = true;
             }
+        }
+
+        // --- Spawn pairing ---------------------------------------------------------------------------------
+        // A client's room script spawning its own copy around the time the host's spawn arrives. The host spawns the same
+        // chaser twice; the client spawns its own copy before the first one has a stand-in (it must be adopted) and after
+        // the second one has one (it must replace it). Either way exactly one copy per host specimen remains.
+        int pairNetA = -1, pairNetB = -1;
+        GameObject pairOwnA, pairOwnB, pairStandIn;
+        string pairSpec;
+
+        void PairingTour(SpookyCharacterController player, float now)
+        {
+            if (now < tourAt) return;
+            SpecimenManager manager = Specimens;
+            if (manager == null) return;
+            if (Hosting)
+            {
+                if (tourStep == 0)
+                {
+                    if (tourWaitFrom < 0) tourWaitFrom = now;
+                    bool together = true;
+                    foreach (Peer peer in peers.Values) if (peer.Accepted && peer.RoomSeq != CurrentRoomSeq) together = false;
+                    if (!together && now - tourWaitFrom < 40) return;
+                }
+                if (tourStep == 0 || tourStep == 1)
+                {
+                    string id = PickSpecimen();
+                    GameObject anchor = new GameObject("SpookyTogether TourAnchor");
+                    anchor.transform.position = player.transform.position + player.transform.forward * (6f + tourStep * 3f);
+                    GameObject s = manager.StartSpecimen(id, anchor.transform, false);
+                    Object.Destroy(anchor);
+                    Log("Tour: host spawned " + id + " for pairing (" + (tourStep == 0 ? "before" : "after") + " the stand-in)");
+                    tourStep++; tourAt = now + 15;
+                    return;
+                }
+                if (tourStep == 2)
+                {
+                    foreach (GameObject s in manager.activeSpecimens.ToArray()) { AllowEndSpecimen = true; try { manager.EndSpecimen(s); } finally { AllowEndSpecimen = false; } }
+                    Check("pairing.host", true, "host spawned and ended two chasers");
+                    tourDone = true;
+                }
+                return;
+            }
+            // Client: copies of host specimens, in arrival order.
+            foreach (Puppet p in puppets.Values)
+            {
+                if (p.SceneKey != null) continue;
+                if (pairNetA < 0 && p.Obj == null)
+                {
+                    pairNetA = p.NetId; pairSpec = p.SpecId;
+                    pairOwnA = SpawnOwnCopy(manager, p.SpecId, player);
+                    Log("Tour: own copy of " + p.SpecId + " spawned before any stand-in (host specimen " + p.NetId + ")");
+                    tourAt = now + 0.2f;
+                }
+                else if (pairNetA >= 0 && p.NetId != pairNetA && pairNetB < 0 && p.Obj != null && p.StandIn)
+                {
+                    pairNetB = p.NetId; pairStandIn = p.Obj;
+                    pairOwnB = SpawnOwnCopy(manager, p.SpecId, player);
+                    Log("Tour: own copy of " + p.SpecId + " spawned after the stand-in (host specimen " + p.NetId + ")");
+                    firstSpawnSeenAt = now;
+                }
+            }
+            if (pairNetB >= 0 && now - firstSpawnSeenAt > 8 && Once("pairing.checks"))
+            {
+                Puppet a, b;
+                bool adopted = puppets.TryGetValue(pairNetA, out a) && pairOwnA != null && a.Obj == pairOwnA;
+                bool replaced = puppets.TryGetValue(pairNetB, out b) && pairOwnB != null && b.Obj == pairOwnB && pairStandIn == null;
+                int copies = 0, hostCopies = 0;
+                foreach (GameObject s in manager.activeSpecimens)
+                {
+                    SpecimenInterface si = s != null ? s.GetComponent<SpecimenInterface>() : null;
+                    string sid = null; try { sid = si != null ? si.spawnedFromSpecId : null; } catch (Exception) { }   // a destroyed specimen's getter throws
+                    if (sid == pairSpec) copies++;
+                }
+                foreach (Puppet p in puppets.Values) if (p.SceneKey == null && p.SpecId == pairSpec) hostCopies++;
+                Check("pairing.adopted", adopted, "own copy is the host's specimen " + pairNetA + ": " + adopted + " (adopted=" + OwnSpawnsAdopted + ")");
+                Check("pairing.replaced", replaced, "own copy replaced the stand-in for " + pairNetB + ": " + replaced + " (replaced=" + StandInsReplaced + ")");
+                Check("pairing.single", copies == hostCopies && hostCopies == 2, "copies of " + pairSpec + "=" + copies + " host specimens=" + hostCopies);
+                tourDone = true;
+            }
+        }
+
+        // What a room script does: SpecimenManager.StartSpecimen outside the mod's own spawns.
+        static GameObject SpawnOwnCopy(SpecimenManager manager, string specId, SpookyCharacterController player)
+        {
+            GameObject anchor = new GameObject("SpookyTogether TourAnchor");
+            anchor.transform.position = player.transform.position + player.transform.forward * 6f;
+            try { return manager.StartSpecimen(specId, anchor.transform, false); }
+            finally { Object.Destroy(anchor); }
         }
 
         // --- Shared state ----------------------------------------------------------------------------------
@@ -570,6 +665,141 @@ namespace SpookyTogether
             }
             if (PropsTouched > 0 && Once("props.real")) Check("props.real", PropRefreshFailures == 0, "props refreshed=" + PropsTouched + " failures=" + PropRefreshFailures);
         }
+        // A puzzle segment whose event adds 1 to a key. The host meets its condition and runs it itself; every other
+        // player's copy is met by the relayed key and replayed by PropRefresh. The key must end at 1 everywhere.
+        PuzzleStateExister tourPuzzle;
+        void PuzzlesTour(float now)
+        {
+            PersistenceData data = CurrentData;
+            if (data == null || now < tourAt) return;
+            if (tourStep == 0)
+            {
+                GameObject go = new GameObject("SpookyTogether TestPuzzle");
+                go.SetActive(false);
+                PuzzleStateExister puzzle = go.AddComponent<PuzzleStateExister>();
+                puzzle.runOnRoomReady = false; puzzle.persistenceKey = "st_puzzle_count";
+                PuzzleStateExister.PuzzleSegment segment = new PuzzleStateExister.PuzzleSegment
+                {
+                    condition = new PersistentValueConditional { key = "st_puzzle_gate", operation = PersistentValueConditional.PersistentOperation.EQUALS, targetValue = 1, item = PersistentValueConditional.ItemCondition.NOP },
+                    onConditionEvents = new UnityEngine.Events.UnityEvent()
+                };
+                segment.onConditionEvents.AddListener(() => puzzle.AddKey(1));
+                puzzle.segments = new[] { segment };
+                go.SetActive(true);
+                tourPuzzle = puzzle;
+                tourStep = 1; tourAt = now + 8;
+            }
+            else if (tourStep == 1)
+            {
+                if (Hosting) { data.SetKey("st_puzzle_gate", 1); tourPuzzle.RunConditions(); Log("Tour: host met the test puzzle and ran it"); }
+                tourStep = 2; tourAt = now + 10;
+            }
+            else if (tourStep == 2)
+            {
+                Check("puzzle.once", data.GetKey("st_puzzle_count") == 1, "count=" + data.GetKey("st_puzzle_count") + " replays here=" + PuzzleReplays);
+                if (tourPuzzle != null) Object.Destroy(tourPuzzle.gameObject);
+                tourDone = true;
+            }
+        }
+
+        // Two clients and the host take the furnace's key in the same moment: exactly one key may result, everywhere.
+        // The host first takes the team through the Dollhouse rooms (the F6 room jump) until one has the furnace, then
+        // opens it with the key ready and sets a "go" key: the host takes the key at once, and each client (but C3) the
+        // moment that key reaches it, which is as close together as the network allows. A lab player standing on a door
+        // trigger can move the team on meanwhile; the host then goes back and starts over.
+        DollhouseFurnaceControl tourFurnace;
+        List<string> furnaceRooms;
+        int furnaceRoomIndex, furnaceTries;
+        string furnaceDoor, furnacePresence, furnaceItem, furnaceRoom, furnaceSearchRoom;
+        float furnaceArrivedAt = -1, furnaceTravelAt;
+
+        void FurnaceTour(float now)
+        {
+            PersistenceData data = CurrentData;
+            if (data == null || now < tourAt) return;
+            if (tourFurnace == null && tourStep < 2) tourFurnace = Object.FindObjectOfType<DollhouseFurnaceControl>();
+            if (Hosting && tourFurnace == null && tourStep < 2) { FurnaceSearch(now); return; }
+            if (tourFurnace == null && furnaceItem == null) return;   // a client waits for the host to bring it there
+            if (furnaceItem == null)
+            {
+                furnaceDoor = Field(typeof(DollhouseFurnaceControl), "furnaceDoorKey").GetValue(tourFurnace) as string;
+                furnacePresence = Field(typeof(DollhouseFurnaceControl), "keyPresenceKey").GetValue(tourFurnace) as string;
+                furnaceItem = Field(typeof(DollhouseFurnaceControl), "keyInventoryId").GetValue(tourFurnace) as string;
+            }
+            if (Hosting && furnaceRoom == null) furnaceRoom = CurrentRoomId();
+            bool go = data.GetKey("st_furnace_go") == 1;
+            if (Hosting && tourStep == 0)
+            {
+                if (tourWaitFrom < 0) tourWaitFrom = now;
+                bool together = true;
+                foreach (Peer peer in peers.Values) if (peer.Accepted && peer.RoomSeq != CurrentRoomSeq) together = false;
+                if (!together && now - tourWaitFrom < 40) return;
+                data.SetKey("st_furnace_go", 0); data.SetKey(furnaceDoor, 1); data.SetKey(furnacePresence, 2);
+                Log("Tour: furnace open with the key ready (" + furnaceItem + ") in " + CurrentRoomId());
+                tourStep = 1; tourAt = now + 8;
+            }
+            else if ((Hosting && tourStep == 1) || (!Hosting && tourStep < 2 && go && tourFurnace != null))
+            {
+                if (Hosting)
+                {
+                    Log("Tour: before the take, door=" + data.GetKey(furnaceDoor) + " key=" + data.GetKey(furnacePresence));
+                    data.SetKey("st_furnace_go", 1);
+                }
+                if (SelfId != 3)
+                {
+                    Log("Tour: taking the furnace key");
+                    typeof(DollhouseFurnaceControl).GetMethod("TakeKey", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public).Invoke(tourFurnace, null);
+                }
+                tourStep = 2; tourAt = now + 4;
+            }
+            else if (tourStep == 2)
+            {
+                int copies = 0; if (data.inventory != null) foreach (string i in data.inventory) if (i == furnaceItem) copies++;
+                Check("furnace.onekey", copies == 1, furnaceItem + " copies=" + copies + " refused=" + FurnaceRefused + " forwarded=" + FurnaceForwarded);
+                Check("furnace.state", data.GetKey(furnacePresence) == 3 && data.GetKey(furnaceDoor) == 1, "key presence=" + data.GetKey(furnacePresence) + " door=" + data.GetKey(furnaceDoor));
+                tourDone = true;
+            }
+        }
+
+        void FurnaceSearch(float now)
+        {
+            if (furnaceRoom != null)
+            {
+                if (++furnaceTries > 4) { Check("furnace.found", false, "the team kept leaving " + furnaceRoom); tourDone = true; return; }
+                Log("Tour: the team left the furnace room; back to " + furnaceRoom);
+                DebugTravel(furnaceRoom, true); tourStep = 0; tourWaitFrom = -1; tourAt = now + 6;
+                return;
+            }
+            if (furnaceRooms == null)
+            {
+                // DOLL_NW first (it had the furnace in every run so far); never the game-over or test rooms.
+                furnaceRooms = new List<string>();
+                AssetDataManager assets = AssetDataManager.GetInstance();
+                if (assets != null && assets.allRoomDefs != null)
+                    foreach (string id in assets.allRoomDefs.Keys)
+                        if (id.StartsWith("DOLL_", StringComparison.OrdinalIgnoreCase) && id.IndexOf("END", StringComparison.OrdinalIgnoreCase) < 0) furnaceRooms.Add(id);
+                furnaceRooms.Sort(string.CompareOrdinal);
+                if (furnaceRooms.Remove("DOLL_NW")) furnaceRooms.Insert(0, "DOLL_NW");
+                Log("Tour: Dollhouse rooms to search for the furnace: " + string.Join(", ", furnaceRooms.ToArray()));
+            }
+            // Up to 20 s for the trip, then up to 6 s in the room for a furnace. A room left before that is visited again.
+            if (furnaceSearchRoom != null)
+            {
+                if (CurrentRoomId() == furnaceSearchRoom)
+                {
+                    if (furnaceArrivedAt < 0) furnaceArrivedAt = now;
+                    if (now - furnaceArrivedAt < 6) { tourAt = now + 1; return; }
+                }
+                else if (furnaceArrivedAt >= 0 && now - furnaceArrivedAt < 6) { Log("Tour: left " + furnaceSearchRoom + " early; going back"); DebugTravel(furnaceSearchRoom, true); furnaceArrivedAt = -1; furnaceTravelAt = now; tourAt = now + 1; return; }
+                else if (furnaceArrivedAt < 0 && now - furnaceTravelAt < 20) { tourAt = now + 1; return; }
+            }
+            if (furnaceRoomIndex >= furnaceRooms.Count) { Check("furnace.found", false, "no Dollhouse room had a furnace"); tourDone = true; return; }
+            furnaceSearchRoom = furnaceRooms[furnaceRoomIndex++]; furnaceArrivedAt = -1; furnaceTravelAt = now;
+            Log("Tour: looking for the furnace in " + furnaceSearchRoom);
+            DebugTravel(furnaceSearchRoom, true);
+            tourAt = now + 1;
+        }
+
         float nextReflect;
         int bossHits;
 

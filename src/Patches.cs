@@ -19,6 +19,8 @@ namespace SpookyTogether
             Patch(typeof(HSMRoomReadyState), "EnterStateInternal", "RoomReadyPrefix", "RoomReadyPostfix");
             Patch(typeof(HSMFloorState), "TransferRequest", "TransferPrefix", null, typeof(string), typeof(string), typeof(bool));
             PatchFloorEvents();
+            foreach (string action in new[] { "LeverInteract", "FurnaceInteract", "PutHandsIn", "CloseFurnace", "OpenFurnaceOff", "TakeKey" })
+                Patch(typeof(DollhouseFurnaceControl), action, "FurnacePrefix", null);
             Patch(typeof(HSMMenuState), "StartMansion", "StartMansionPrefix", "StartMansionPostfix");
             Patch(typeof(HSMGameRootState), "KillPlayer", "KillPlayerPrefix", null);
             Patch(typeof(SpookyCharacterController), "OnRoomReady", null, "OnRoomReadyPostfix");
@@ -44,6 +46,10 @@ namespace SpookyTogether
             Patch(typeof(GameManager), "ExitGame", "ExitGamePrefix", null);
             Patch(typeof(LocalRoomControl), "InitializeActive", "SeedPrefix", "SeedPostfix");
             Patch(typeof(PersistenceData), "SetKey", "SetKeyPrefix", "SetKeyPostfix");
+            // A replayed puzzle segment writes nothing (PropRefresh.ReplaySegment); the postfixes see ApplyingState and stay quiet.
+            foreach (string write in new[] { "SetKey", "ClearKey", "AddToInventory", "RemoveFromInventory", "RemoveFromInventorySubvalues" })
+                Patch(typeof(PersistenceData), write, "ReplayWritePrefix", null);
+            Patch(typeof(PuzzleStateExister), "RunConditions", null, "RunConditionsPostfix");
             Patch(typeof(PersistenceData), "ClearKey", "ClearKeyPrefix", "ClearKeyPostfix");
             Patch(typeof(PersistenceData), "AddToInventory", null, "AddItemPostfix");
             Patch(typeof(PersistenceData), "RemoveFromInventory", null, "RemoveItemPostfix");
@@ -107,6 +113,7 @@ namespace SpookyTogether
             catch (Exception ex) { failed++; TogetherRuntime.Log("Patch failed FloorConfigState.IncrementRoomOffset: " + ex.Message); }
         }
 
+        static bool FurnacePrefix(DollhouseFurnaceControl __instance, MethodBase __originalMethod) { return TogetherRuntime.BeforeFurnaceAction(__instance, __originalMethod.Name); }
         static void FloorEventPrefix(out bool __state) { __state = TogetherRuntime.BeginLocalFloorEvent(); }
         static void FloorEventFinalizer(bool __state) { if (__state) TogetherRuntime.ApplyingState = false; }
 
@@ -150,6 +157,8 @@ namespace SpookyTogether
             catch (Exception ex) { TogetherRuntime.Log("Specimen tracking failed: " + ex.Message); }
         }
 
+        static bool ReplayWritePrefix() { return !TogetherRuntime.PuzzleReplay; }
+        static void RunConditionsPostfix(PuzzleStateExister __instance) { TogetherRuntime.AfterRunConditions(__instance); }
         static void SetKeyPrefix(PersistenceData __instance, string key, out int __state) { __state = __instance.liveData != null && __instance.liveData.ContainsKey(key) ? __instance.GetKey(key) : int.MinValue; }
         static void SetKeyPostfix(PersistenceData __instance, string key, int value, int __state) { if (__state != value) TogetherRuntime.AfterKeyChange(__instance, key, value, false); }
         static void ClearKeyPrefix(PersistenceData __instance, string key, out bool __state) { __state = __instance.liveData != null && __instance.liveData.ContainsKey(key); }

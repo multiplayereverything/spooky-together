@@ -78,6 +78,7 @@ namespace SpookyTogether
         {
             TogetherRuntime rt = Instance;
             if (rt == null) return;
+            rt.NoteRoomReady();
             rt.SpreadFromSpawn();
             rt.SeedPuzzleState();
             // Materials can change while the room loads (a specimen's floor override); resend the final look.

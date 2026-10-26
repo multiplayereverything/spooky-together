@@ -1,5 +1,53 @@
 # Spooky Together mod log
 
+## 0.2.9 (2026-10-26): the five open audit items, protocol 9
+Request: fix the open audit items from the handoff, with tests.
+
+### Fixed
+- **Specimens that keep the player in a variable** (Spec6, Spec8, Hooked Doll, Frenzy, Nightmare) measured distance to the host and ignored teammates. The retarget transpiler now also rewrites `.transform` reads of a `SpookyCharacterController` held in a local or field (coroutine state included) into `Target(this)`. The other uses of the player (health, camera, sounds) stay local.
+- **Client spawn pairing race.** The host's spawn usually arrives before the client's own room script spawns its copy. The client used to spawn a stand-in at once, then remove its own copy after 6 s, so room scripts holding that copy lost it and `Spawned()` ran twice. Now:
+  - a stand-in waits until 1.5 s after the client's room is ready;
+  - the client's own copy binds to a host specimen still waiting for one;
+  - an own copy arriving after a stand-in (within 10 s) replaces it.
+- **Dollhouse furnace:**
+  - **Stale writes:** every action re-reads the shared door, lever and key values first, so a late refresh can't write old values over a teammate's change.
+  - **Actions that no longer apply** are refused, for example taking a key someone already took.
+  - **Client actions** run on the host's furnace (`ObjectUsed` kind 7), in order, so two players taking the key at once give one key.
+- **Puzzle replays:** a segment that a teammate's change met here runs its events for show only. Its key and inventory writes are skipped; before, an `AddKey` ran once per player. When the game runs a puzzle's conditions itself, those segments are marked met, so the refresh doesn't fire them again.
+- **Endings outside a run:**
+  - An ending that reaches a client before it is in the run is held for 30 s and applied once it is.
+  - With no floor state (between floors), the client queues the killscreen instead of crashing in `GotoKillscreen`.
+  - The host now sends end-of-run after an ending too. A client still in the run 10 s later, with no killscreen, goes back to the menu.
+
+### Added (testing)
+- **Tours:** `pairing`, `furnace` (Dollhouse), `puzzles` and `lateending`. `enemies` now checks that each of the five specimens had kept-player reads rewritten (`retarget.cached.*`).
+- **Mutation switches** (11 in all): `cachedplayer`, `pairing`, `furnace`, `puzzlereplay`, `endingrescue`.
+- **The `furnace` tour searches** the Dollhouse rooms with the F6 room jump, `DOLL_NW` first. If a lab player's door trigger moves the team out first, the host takes it back.
+- **Lab:** the hidden lab windows sometimes start a base-mansion run by themselves (seen in logs since 2026-10-22, likely stray input). A tour that needs another mansion now goes back to the menu and starts its own.
+- **`package.ps1`** writes ZIP entries with `/`. `Compress-Archive` in Windows PowerShell 5 wrote backslashes, which other unzip tools mangle.
+
+### Evidence (4 players, windows hidden; CPU 40–99% with other labs running)
+| Run | Result | Notes |
+| --- | --- | --- |
+| `tests/rules-test.py` | PASS | 11 mutation switches listed; 0.2.9 / protocol 9 |
+| `pairing` | PASS | the own copy was adopted, and the second replaced its stand-in; 2 copies for 2 host specimens |
+| `enemies` | PASS | `retarget.cached.*`: Spec6 8, Spec8 12, HookedDoll 1, Frenzy 2, Nightmare 3 rewritten reads |
+| `furnace` | PASS (twice, plus once in the suite) | the host took the key; both clients' requests were refused 20–40 ms later; 1 key everywhere |
+| `puzzles`, `lateending`, `dollprops`, `ending`, `clientending` | PASS | |
+| quick suite (15 tours, new ones included) | 13 of 15 at 97% CPU | `axe` and `elevator` failed under load (c3 late) and passed on reruns at 70–85% CPU |
+| mutation check (the 5 new switches) | 0 of 5 survived | each tour failed on the fixed behaviour itself, e.g. `furnace` 3 copies, `puzzles` count 3, `cachedplayer` 0 rewritten reads |
+| `test-transport.ps1` | 5/5 | |
+
+Earlier tour attempts failed for test reasons, now fixed:
+- **`furnace`:** the search found no furnace, and lab players walked the team out of the furnace room.
+- **`dollprops`:** a stray base-mansion run started.
+
+One early `furnace` run, on the older tour code, had the host refuse its own `TakeKey` (the key was no longer "ready"). It wasn't reproduced; the tour now logs the furnace state just before the take.
+
+Installed into the real game on 2026-10-26 (BepInEx, SHA256 d033dcdf…d33b; the 0.2.8 plugin is backed up in `private/backups/install-0.2.9`).
+
+Not tested: specimens chasing a teammate in play (the retarget check counts rewritten reads), real puzzles beyond the test segment, and Steam between two accounts.
+
 ## 0.2.8 (2026-10-26): online through Steam, audit fixes, mutation checks, protocol 8
 Requests: continue and improve (coop-research, coop-revive, coop-qa, coop-reverse-engineer, coop-sync-testing); then "this won't use the global relay server and work with steam api".
 
