@@ -31,10 +31,20 @@ namespace SpookyTogether
 
         bool StateSyncActive { get { return Connected && RunActive && AcceptedCount + (Hosting ? 0 : 1) > 0; } }
 
+        // A client's floor fires the same room events as the host's, and the host's copy relays those keys: the client's
+        // stay local, so a client whose floor count is off cannot push its keys onto everyone.
+        public static bool BeginLocalFloorEvent()
+        {
+            TogetherRuntime rt = Instance;
+            if (rt == null || !rt.IsClient || !rt.Connected || ApplyingState) return false;
+            ApplyingState = true;
+            return true;
+        }
+
         public static void AfterKeyChange(PersistenceData data, string key, int value, bool cleared)
         {
             TogetherRuntime rt = Instance;
-            if (ApplyingState || rt == null || data == null || data != CurrentData || !rt.StateSyncActive || !SharedKey(key)) return;
+            if (ApplyingState || rt == null || data == null || data != CurrentData || !rt.StateSyncActive || !SharedKey(key) || Mutant("keys")) return;
             byte[] packet = Wire.Packet(Op.StateKey, w => { Wire.Text(w, key); w.Write(cleared); w.Write(value); });
             rt.Broadcast(packet);
         }
@@ -242,6 +252,7 @@ namespace SpookyTogether
         {
             TogetherRuntime rt = Instance;
             if (ApplyingState || rt == null || c == null || !rt.StateSyncActive) return;
+            if ((kind == 5 || kind == 6) && Mutant("elevator")) return;
             string key = ObjectKey(c);
             rt.Broadcast(Wire.Packet(Op.ObjectUsed, w => { w.Write(kind); Wire.Text(w, key); Wire.Text(w, extra ?? ""); }));
         }

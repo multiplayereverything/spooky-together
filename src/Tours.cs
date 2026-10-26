@@ -11,6 +11,7 @@ namespace SpookyTogether
     {
         int tourStep;
         float tourAt;
+        float tourWaitFrom = -1;   // lab: when the state tour began waiting for the team
         GameObject tourSpec;
         float tourHealthBefore;
         int hurtReceived;
@@ -215,6 +216,12 @@ namespace SpookyTogether
             if (data == null || now < tourAt) return;
             if (tourStep == 0)
             {
+                // Everyone in this room first (up to 40 s): on a loaded PC a teammate can arrive seconds late, and the
+                // check then measured load time, not sync.
+                if (tourWaitFrom < 0) tourWaitFrom = now;
+                bool together = true;
+                foreach (Peer peer in peers.Values) if (peer.Accepted && peer.RoomSeq != CurrentRoomSeq) together = false;
+                if (!together && now - tourWaitFrom < 40) return;
                 // Every player writes its own key and item; everyone must end up with all of them.
                 data.SetKey("st_key_" + SelfId, 10 + SelfId);
                 data.AddToInventory(TourItem(SelfId));
@@ -232,15 +239,19 @@ namespace SpookyTogether
                 int players = Hosting ? 1 + AcceptedCount : 1 + peers.Count;
                 Check("state.keys", keys == players, "have " + keys + "/" + players);
                 Check("state.items", items == players, "have " + items + "/" + players);
-                tourStep = 2; tourAt = now + 4;
+                // The host's removal next must not reach a slower teammate before it has counted.
+                tourStep = 2; tourAt = now + (Hosting ? 12 : 0);
             }
             else if (tourStep == 2)
             {
                 if (Hosting) { data.RemoveFromInventory(TourItem(0)); data.SetKey("violence", 21); }
-                tourStep = 3; tourAt = now + 6;
+                tourStep = 3; tourAt = now + 6; tourWaitFrom = now;
             }
             else if (tourStep == 3)
             {
+                // A client waits for the host's change itself (up to 20 s), not a fixed time that a slow PC outruns.
+                bool arrived = !data.HasInventoryItem(TourItem(0)) && data.GetKey("violence") == 21;
+                if (!Hosting && !arrived && now - tourWaitFrom < 20) return;
                 Check("state.remove", !data.HasInventoryItem(TourItem(0)), "host removed " + TourItem(0));
                 Check("state.violence", data.GetKey("violence") == 21, "violence=" + data.GetKey("violence"));
                 Check("props.refresh", PropRefreshes > 0 && PropRefreshFailures == 0, "refreshes=" + PropRefreshes + " failures=" + PropRefreshFailures);

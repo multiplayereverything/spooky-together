@@ -17,7 +17,7 @@ namespace SpookyTogether
     }
 
     // No Unity calls are permitted on the socket threads.
-    public sealed class Transport : IDisposable
+    public sealed partial class Transport : IDisposable
     {
         public const int MaxFrame = 65536;
         // Lab only: simulated one-way delay and jitter on every send, to test desync on slow links.
@@ -25,24 +25,51 @@ namespace SpookyTogether
         readonly ConcurrentQueue<NetworkEvent> events = new ConcurrentQueue<NetworkEvent>();
         readonly Dictionary<int, Link> links = new Dictionary<int, Link>();
         readonly object gate = new object();
+        // Packets waiting for the main thread, per peer id (0 = the host on a client, 1-3 = clients on the host).
+        readonly int[] pending = new int[4];
+        // About 30 s of a client's busiest stream (poses, snapshots, pings): a long load must not cost the link.
+        const int MaxPending = 2048;
         TcpListener listener;
-        ModRelay.RelayHost relayRoom;
         volatile bool disposed;
         public bool Hosting { get; private set; }
         public int Port { get; private set; }
-        // Online (global relay, mod-relay/relay.py): friends arrive through the relay's tunnel.
-        public bool Relayed { get; private set; }
-        public string RoomCode { get { ModRelay.RelayHost room = relayRoom; return room == null ? null : room.Code; } }
 
         void Emit(int peer, string kind, byte[] data, string message)
         {
             if (disposed) return;
-            // Only data packets count against the cap; dropping a "disconnected" event would leave a ghost peer.
-            if (kind == "packet" && events.Count >= 512) { Drop(peer); return; }
+            // Only data packets count against the cap, and only the sender's own; dropping a "disconnected" event
+            // would leave a ghost peer.
+            if (kind == "packet" && peer >= 0 && peer < pending.Length && Interlocked.Increment(ref pending[peer]) > MaxPending)
+            {
+                Interlocked.Decrement(ref pending[peer]);
+                Drop(peer, null, MaxPending + " packets were waiting for the game (it stalled)");
+                return;
+            }
             events.Enqueue(new NetworkEvent { Peer = peer, Kind = kind, Data = data, Message = message });
         }
 
-        public bool Poll(out NetworkEvent e) { return events.TryDequeue(out e); }
+        public bool Poll(out NetworkEvent e)
+        {
+            if (OnSteam && !disposed && events.IsEmpty) PumpSteam();
+            if (!events.TryDequeue(out e)) return false;
+            if (e.Kind == "packet" && e.Peer >= 0 && e.Peer < pending.Length) Interlocked.Decrement(ref pending[e.Peer]);
+            return true;
+        }
+
+        // A full game tells the joiner why, instead of closing on it.
+        static void RefuseFull(TcpClient client)
+        {
+            try
+            {
+                client.SendTimeout = 2000;
+                byte[] packet = Wire.Packet(Op.Reject, w => Wire.Text(w, "The game is full (4 players)."));
+                byte[] header = { (byte)packet.Length, (byte)(packet.Length >> 8), (byte)(packet.Length >> 16), (byte)(packet.Length >> 24) };
+                NetworkStream stream = client.GetStream();
+                stream.Write(header, 0, 4); stream.Write(packet, 0, packet.Length);
+            }
+            catch (Exception) { }   // the joiner is refused either way; the close below ends it
+            finally { client.Close(); }
+        }
 
         public void Host(int port, bool loopback)
         {
@@ -55,68 +82,18 @@ namespace SpookyTogether
             {
                 while (!disposed)
                 {
-                    try
+                    TcpClient client;
+                    try { client = listener.AcceptTcpClient(); }
+                    catch (Exception ex)
                     {
-                        TcpClient client = listener.AcceptTcpClient();
-                        lock (gate)
-                        {
-                            int id = 1;
-                            while (links.ContainsKey(id)) id++;
-                            if (disposed || id > 3) { client.Close(); continue; }
-                            Attach(id, client);
-                        }
+                        if (disposed) break;
+                        // One failed accept (a joiner that reset at once) must not end hosting for everyone else.
+                        Emit(-1, "log", null, "Accept failed: " + ex.Message);
+                        Thread.Sleep(200);
+                        continue;
                     }
-                    catch (Exception ex) { if (!disposed) Emit(-1, "error", null, ex.Message); break; }
+                    AcceptClient(client);
                 }
-            });
-        }
-
-        // Online host: like Host(), but friends are tunnelled connections from the global relay instead of
-        // a TcpListener (no port forwarding). Emits "room" (Message = room code) once the room exists;
-        // "relay-lost" (Message = reason) if it can't be opened or the relay connection ends.
-        public void HostRelay(string relayHost, int relayPort, string game, string version, bool listed, string roomName)
-        {
-            if (listener != null || Hosting || disposed) throw new InvalidOperationException("Transport already used.");
-            Hosting = true; Relayed = true;
-            StartThread(delegate
-            {
-                try
-                {
-                    ModRelay.RelayHost room = new ModRelay.RelayHost(relayHost, relayPort, game, version, listed, roomName, 8000);
-                    lock (gate) { if (disposed) { room.Dispose(); return; } relayRoom = room; }
-                    Emit(-1, "room", null, room.Code);
-                    room.Start(delegate(TcpClient client)
-                    {
-                        lock (gate)
-                        {
-                            int id = 1;
-                            while (links.ContainsKey(id)) id++;
-                            if (disposed || id > 3) { client.Close(); return; }
-                            Attach(id, client);
-                        }
-                    }, delegate(string reason) { Emit(-1, "relay-lost", null, reason); });
-                }
-                catch (Exception ex) { Emit(-1, "relay-lost", null, ex.Message); }
-            });
-        }
-
-        // Online friend: connect through the global relay with the host's room code. Events are the same as Join().
-        public void JoinRelay(string relayHost, int relayPort, string game, string version, string code, string name)
-        {
-            if (disposed) throw new ObjectDisposedException("Transport");
-            Relayed = true;
-            StartThread(delegate
-            {
-                try
-                {
-                    TcpClient client = ModRelay.RelayLink.Join(relayHost, relayPort, game, version, code, name, 8000);
-                    lock (gate)
-                    {
-                        if (disposed) { client.Close(); return; }
-                        Attach(0, client);
-                    }
-                }
-                catch (Exception ex) { Emit(0, "error", null, ex.Message); }
             });
         }
 
@@ -144,6 +121,24 @@ namespace SpookyTogether
             });
         }
 
+        void AcceptClient(TcpClient client)
+        {
+            bool full = false;
+            lock (gate)
+            {
+                int id = 1;
+                while (links.ContainsKey(id)) id++;
+                if (disposed) { client.Close(); return; }
+                if (id > 3) full = true;
+                else
+                {
+                    try { Attach(id, client); }
+                    catch (Exception ex) { links.Remove(id); client.Close(); Emit(-1, "log", null, "A joiner's connection failed: " + ex.Message); }
+                }
+            }
+            if (full) RefuseFull(client);
+        }
+
         void Attach(int id, TcpClient client)
         {
             client.NoDelay = true;
@@ -158,20 +153,24 @@ namespace SpookyTogether
         public void Send(int id, byte[] packet)
         {
             if (packet == null || packet.Length == 0 || packet.Length > MaxFrame) throw new ArgumentException("Invalid packet size.");
+            if (OnSteam) { if (!disposed) SendSteam(id, packet, false); return; }
             lock (gate) { Link link; if (links.TryGetValue(id, out link)) link.Send(packet); }
         }
 
         public void Drop(int id)
-        { Drop(id, null); }
+        { Drop(id, null, null); }
 
         public void SendAndClose(int id, byte[] packet)
         {
             if (packet == null || packet.Length < 1 || packet.Length > MaxFrame) throw new ArgumentException("Invalid final packet size.");
+            if (OnSteam) { if (!disposed) SendSteam(id, packet, true); return; }
             lock (gate) { Link link; if (links.TryGetValue(id, out link)) link.SendAndClose(packet); }
         }
 
-        void Drop(int id, Link expected)
+        // reason: why the link ended, for the log (null for a normal close).
+        void Drop(int id, Link expected, string reason)
         {
+            if (OnSteam) { if (!disposed) DropSteam(id, reason, false); return; }
             lock (gate)
             {
                 Link link;
@@ -179,7 +178,7 @@ namespace SpookyTogether
                 if (expected != null && link != expected) return;
                 links.Remove(id);
                 link.Close();
-                Emit(id, "disconnected", null, null);
+                Emit(id, "disconnected", null, reason);
             }
         }
 
@@ -190,7 +189,7 @@ namespace SpookyTogether
                 if (disposed) return;
                 disposed = true;
                 if (listener != null) listener.Stop();
-                if (relayRoom != null) relayRoom.Dispose();
+                DisposeSteam();
                 foreach (Link link in links.Values) link.Close();
                 links.Clear();
                 NetworkEvent unused; while (events.TryDequeue(out unused)) { }
@@ -221,7 +220,7 @@ namespace SpookyTogether
             {
                 if (closed || closeAfterSend) return;
                 // A link that cannot keep up for several seconds is dropped rather than buffering without limit.
-                if (outgoing.Count >= 512) { owner.Drop(id); return; }
+                if (outgoing.Count >= 512) { owner.Drop(id, this, "512 packets could not be sent (the connection stalled)"); return; }
                 if (LagMs > 0)
                 {
                     lock (due)
@@ -237,6 +236,7 @@ namespace SpookyTogether
             public void SendAndClose(byte[] packet) { Send(packet); closeAfterSend = true; wake.Set(); }
             void Read()
             {
+                string reason = null;
                 try
                 {
                     while (!closed)
@@ -244,14 +244,18 @@ namespace SpookyTogether
                         byte[] header = ReadExactly(stream, 4);
                         int size = header[0] | header[1] << 8 | header[2] << 16 | header[3] << 24;
                         if (size < 1 || size > MaxFrame) throw new IOException("Invalid frame length.");
-                        owner.Emit(id, "packet", ReadExactly(stream, size), null);
+                        byte[] data = ReadExactly(stream, size);
+                        // A packet read just before this link closed must not reach a new link given the same id.
+                        if (!closed) owner.Emit(id, "packet", data, null);
                     }
                 }
-                catch (Exception) { }   // a closed socket or a bad frame ends the link; Drop reports the disconnect
-                finally { owner.Drop(id, this); }
+                catch (EndOfStreamException) { if (!closed) reason = "closed by the other side"; }
+                catch (Exception ex) { if (!closed) reason = "receive failed: " + ex.GetType().Name + ": " + ex.Message; }
+                finally { owner.Drop(id, this, reason); }
             }
             void Write()
             {
+                string reason = null;
                 try
                 {
                     while (!closed)
@@ -271,8 +275,8 @@ namespace SpookyTogether
                         stream.Write(header, 0, 4); stream.Write(packet, 0, size);
                     }
                 }
-                catch (Exception) { }   // a closed socket ends the link; Drop reports the disconnect
-                finally { owner.Drop(id, this); wake.Dispose(); }
+                catch (Exception ex) { if (!closed) reason = "send failed: " + ex.GetType().Name + ": " + ex.Message; }
+                finally { owner.Drop(id, this, reason); wake.Dispose(); }
             }
         }
 
@@ -294,7 +298,7 @@ namespace SpookyTogether
 
     public static class Wire
     {
-        public const int Version = 7;
+        public const int Version = 8;
         public static byte[] Packet(Op op, Action<BinaryWriter> write)
         {
             using (MemoryStream memory = new MemoryStream())

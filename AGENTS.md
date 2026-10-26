@@ -1,6 +1,6 @@
 # Spooky Together development
 
-Start with `../handoff.md` (current state, next steps) and `README.md` (behaviour, limitations). Keep both current along with `MODLOG.md`.
+Start with `handoff.md` (current state, next steps) and `README.md` (behaviour, limitations). Keep both current along with `MODLOG.md`.
 
 ## Code graph
 - **Game code:** the decompiled game is in `private/decompiled`, and its Graphify graph is in `private/decompiled/graphify-out`. For "where does the game do X", read `GRAPH_REPORT.md` and use `graphify query/explain` there before grepping.
@@ -12,6 +12,7 @@ Start with `../handoff.md` (current state, next steps) and `README.md` (behaviou
 | `HSMLoadRoomState.RunRoutine` (postfix wraps the iterator) | Host announces the room. Client waits for it and swaps `sceneToLoad` / `roomConfig` / `namedSpawnDoor` before the load starts. |
 | `HSMRoomReadyState.EnterStateInternal` | Spawn door chosen from the shared room seed. |
 | `HSMFloorState.TransferRequest(string,string,bool)` | Client doors become requests to the host. `TogetherRuntime.BypassTransfer` lets the mod's own calls through. |
+| `FloorConfigState.IncrementRoomOffset` (prefix plus finalizer) | A client's floor room events stay local (the host's copy relays them). `AlignFloor` puts a client's root floor at the host's offset each room. |
 | `HSMMenuState.StartMansion` | Host broadcasts the run. Clients are blocked unless `AllowStart` is set. |
 | `HSMGameRootState.KillPlayer` | Downed and spectate instead of dying while a teammate stands. `AllowDeath` runs the native death. |
 | `SpookyCharacterController.OnRoomReady` | Revive and spread players from the spawn. |
@@ -29,6 +30,11 @@ Start with `../handoff.md` (current state, next steps) and `README.md` (behaviou
 | `HSMGameRootState.GotoKillscreen` | Endings: the host broadcasts; a client's call becomes a request to the host. |
 | `EndlessSkipRoomUIControl.StartInteraction` | Host-only skip-room TV. |
 
+## Networking
+- **LAN / direct:** `Transport` over TCP (port 27020), with LAN discovery on UDP 27021 (`LanDiscovery.cs`).
+- **Online:** Steam only (no global relay). `SteamLobby.cs` opens or finds a Steam lobby (list, invites, Join Game, `+connect_lobby`). `SteamNet.cs` carries packets over Steam Networking Sockets P2P, on the main thread.
+- **Lab:** `run-tour.ps1 -Steam` uses a real lobby. The copies share one Steam account, so they connect over 127.0.0.1 through the same Steam sockets.
+
 ## Repository
 - **GitHub:** https://github.com/multiplayereverything/spooky-together (private). Commit and push after each version.
 - **Identity:** commits use the repo's local identity (`multiplayereverything`, the GitHub no-reply address), never a personal email.
@@ -38,7 +44,7 @@ Start with `../handoff.md` (current state, next steps) and `README.md` (behaviou
 
 ## Rules
 - **Statics:** a new static field is cleared in a reset method or marked `// process-scoped`, `// call-scoped` or `// lab-only` on its line; an empty `catch` says why on its line. `tests/rules-test.py` enforces both.
-- **Build and test:** build with `scripts/build.ps1`. Test with `scripts/run-tour.ps1 -Tour <enemies|state|axe|ending|clientending|serverlist|soak>`.
+- **Build and test:** build with `scripts/build.ps1`. Test with `scripts/run-tour.ps1 -Tour <enemies|state|axe|ending|clientending|serverlist|soak> [-Steam]`. `scripts/mutants.ps1` proves each guarded fix's tour fails without it; a new `Mutant("x")` switch needs its tour listed there (`rules-test.py` checks).
   - Windows are hidden; up to 4 lab copies run: host (BepInEx), c1 (MelonLoader), c2 (BepInEx), c3 (MelonLoader).
   - Per-instance evidence is `private/lab-*/spooky-together-lab.log` (`ST-CHECK`, `ST-METRIC`, `ST-MODERROR`). Unity logs are in `private/lab-logs/`.
   - Never feed fake inventory ids: the game's HUD throws on unknown items inside a room-ready task and stalls its state machine.

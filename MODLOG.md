@@ -1,5 +1,67 @@
 # Spooky Together mod log
 
+## 0.2.8 (2026-10-26): online through Steam, audit fixes, mutation checks, protocol 8
+Requests: continue and improve (coop-research, coop-revive, coop-qa, coop-reverse-engineer, coop-sync-testing); then "this won't use the global relay server and work with steam api".
+
+### Online play through Steam (replaces the global relay)
+- **Removed:** the global relay mode, room codes and mods-info (`OnlineRelay.cs`, `RelayLink.cs`, `ModInfo.cs`, `-st-relay`, `-st-online`, `-st-modinfo`).
+- **Steam lobby** (`SteamLobby.cs`): the host presses **Host on Steam**. Friends find the game in three ways:
+  - the panel's **Steam games** list (public lobbies);
+  - **Join Game** on the host's Steam profile;
+  - an invite. An invite also launches the game (`+connect_lobby`).
+- **Lobby data:** the host's name, mod version and protocol, player count and mansion. A version mismatch is refused before connecting.
+- **Steam Networking Sockets P2P** (`SteamNet.cs`) carries the same packets as LAN, through Valve's relay, so nobody forwards a port. It runs on the main thread: messages are pumped in `Poll`, and connection changes arrive through the game's own `SteamAPI.RunCallbacks`.
+- **A full game** refuses a fifth player with a reason. LAN / direct and the LAN server list are unchanged.
+- **Lab:** `run-tour.ps1 -Steam` opens a real lobby tagged with the run. The copies share one Steam account, which can't connect to itself peer to peer, so they connect through the same Steam sockets over 127.0.0.1.
+
+### Fixed (from a read-only audit per subsystem, each finding checked against the decompiled game)
+- **Client floor drift.** A client's own floor state counts rooms too. It fires that floor's room events (`SetKey` at room N, relayed to everyone), and can end floors early. On the last floor that ended the client's run.
+  - It drifted on Dollhouse "no increase" transfers, because clients always passed `false`.
+  - It drifted when a client joined mid-run, because it started at floor 0, offset 0.
+  - **Now:** the room packet carries the host's root-floor offset, and a client's root floor is moved to the host's floor and offset (`AlignFloor`). A forced follow keeps the host's room counter. A client's floor events stay local (`FloorConfigState.IncrementRoomOffset` prefix plus finalizer).
+- **Rejoin after the host restarted:** the host restarted and began a new run 1, and a reconnecting client took it for its old run. The client then ignored rooms until its old sequence number. `StartRun` now carries a host session id.
+- **Rejoin after playing alone:** a client that loaded rooms alone while disconnected now reloads into the host's room. Before, it stayed in its own room until the next door.
+- **Specimens spawned while disconnected** are paired with the host's after a rejoin, or removed.
+- **Endless husk hits** on a remote player landed on the host. The husk hurts with its swarm as the source; the hit now goes to the player that husk chases.
+- **Client copies of specimens at run end** were only hidden by the game's `ClearSpecimens`. They stayed in `SpecimenManager.activeSpecimens` into the next run. They are now ended properly.
+- **A teammate loading into the room** (one room behind) counts as standing, so the host's death in that moment no longer ends the run for everyone.
+- **Room load:** a failure while announcing or following a room is logged and can't stall the game's room-load state machine.
+- **Network layer:**
+  - **Packet cap:** it is now per sender and about 30 s deep. One cap shared by all peers dropped whoever sent next after a ~8 s main-thread stall.
+  - **Link drops:** every dropped link logs why (bad frame, send or receive failure, stall).
+  - **Hosting:** a failed accept no longer ends hosting for everyone.
+  - **Full game:** it refuses with "The game is full" instead of closing silently.
+  - **Reused peer ids:** a packet read just before a link closed can't reach a new link that reuses its id.
+  - **LAN list:** it is capped at 32 entries.
+- **Build:** `build.ps1` finds the game through `-GameDir`, `$env:SPOOKY_GAME`, the parent folder or Steam's library folders. It broke when the source moved out of the game folder.
+- **Lab:** a copy still exiting from the previous tour no longer fails the next tour's log cleanup.
+
+### Added (testing)
+- **Mutation check:** `scripts/mutants.ps1` turns one fix off at a time with `-st-mutate` (lab only) and expects its tour to fail. It covers retargeting, hurt routing, shared keys, weapon hits, elevator presses and stale locks. `rules-test.py` checks that every `Mutant("x")` switch has a tour.
+- **`scripts/test-transport.ps1`** (was `test-relay.ps1`) checks the LAN path offline: joins, a full game's refusal, a bad frame's logged reason, and that hosting continues afterwards.
+- **`docs/research.md`:** prior co-op work. Nothing exists for the HD Renovation; Project Recode plans couch co-op for the original game.
+- **Lab robustness:**
+  - The `state` tour waits until the whole team is in the room, and clients wait for the host's change rather than a fixed time.
+  - `verify-lab.py` counts rooms a client followed into, not only the 10 s samples. A client that reached the room and its ending a second later was judged "fell behind".
+
+### Evidence (4 players, windows hidden)
+Another session's game lab ran at the same time, so CPU was at 76–100% throughout.
+
+| Run | Result | Notes |
+| --- | --- | --- |
+| `tests/rules-test.py` | PASS | 6 mutation switches listed; versions 0.2.8 / protocol 8 |
+| `scripts/test-transport.ps1` | 5/5 | LAN join, full-game refusal, hosting after leaves, bad frame's reason |
+| `state -Steam` | PASS | real Steam lobby created and found in Steam's lobby list; Steam sockets; 0 errors |
+| `enemies -Steam` | all checks passed | c3's heap trend was flagged during its late load (2.15 MB/10 s, short tour) |
+| `state` (LAN) | PASS | 0 errors |
+| quick suite | 9 of 11, then 11 of 11 | `clientending` and `takerbad` failed only on c3 "fell behind" (it reached the ending); both passed live after the verifier fix |
+| `scripts/mutants.ps1` | 0 of 6 survived | every fix's tour fails with the fix off. `hurtrouting` was caught by `enemy.hit.host`, a check that also failed once without a mutant under load, so that catch is weak |
+| `um publish check` (`git archive`) | PASS | no game files or personal paths |
+
+Not tested: Steam P2P through Valve's relay between two Steam accounts (the lab has one account), the full suite (soak, lag, campaigns, reconnect), and the game launched by hand after installing.
+
+Installed into the real game on 2026-10-26 (BepInEx, SHA256 274cf353…bc5f, the build the lab ran). BepInEx's loader files (`winhttp.dll`, `doorstop_config.ini`, `BepInEx/core`) were missing again and were restored from `deps/`; `BepInEx/config` was kept and backed up to `private/backups/install-2026-10-26`.
+
 ## 0.2.7 (2026-10-25): source rule test, cut-out sound fix
 Request: "use it on spooky" (review the mod against the YokWare-multiplayer-game skill and apply what fits). Protocol unchanged (7).
 

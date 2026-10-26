@@ -23,7 +23,8 @@ namespace SpookyTogether
         bool TeammateStanding()
         {
             foreach (Peer peer in peers.Values)
-                if (peer.Accepted && !peer.Downed && peer.RoomSeq >= 0 && peer.RoomSeq == CurrentRoomSeq) return true;
+                // A teammate one room behind is still loading into this room (or one ahead, already in the next): standing.
+                if (peer.Accepted && !peer.Downed && peer.RoomSeq >= 0 && Mathf.Abs(peer.RoomSeq - CurrentRoomSeq) <= 1) return true;
             return false;
         }
 

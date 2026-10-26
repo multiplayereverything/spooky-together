@@ -42,16 +42,17 @@ Downed, Not Dead
 
 Quality of Life
 
-* Server browser with automatic local-network discovery and direct IP joining.
+* Online play through Steam: host with one button, friends join from the Steam games list, Join Game on your profile, or an invite. No port forwarding.
+* LAN server browser with automatic local-network discovery and direct IP joining.
 * Coloured player figures with name tags.
 * The game won't pause when you tab out while connected.
 * Players can join a run already in progress.
 * Host-only debug menu on F6: teleport to rooms, spawn or clear specimens, enable god mode, and save bug reports.
 
 Installation
-All players need the same game version and the same mod version (0.2.6).
+All players need the same game version and the same mod version (0.2.8).
 
-1. Download `SpookyTogether-0.2.6-Ready.zip`.
+1. Download `SpookyTogether-0.2.8-Ready.zip`.
 2. Open the game folder (the one containing `SpookyUnity.exe`).
 
    * Steam: Right-click the game → Manage → Browse local files.
@@ -65,14 +66,15 @@ To uninstall, delete `winhttp.dll` from the game folder (or delete `winhttp.dll`
 How to Play
 
 1. Start the game and press F5 to open the multiplayer panel. Set your name and colour.
-2. One player presses Host.
-3. Everyone else selects the host from the server list or enters the host's IP address and presses Join.
+2. Online: pick Online (Steam) and press Host on Steam. Friends pick the game from the Steam games list, press Join Game on your Steam profile, or accept your invite.
+3. LAN: one player presses Host; everyone else selects the host from the server list or enters the host's IP address and presses Join.
 4. The host starts a run from the main menu using New Game or Continue. Everyone is automatically brought into the mansion.
 
 Playing Over the Internet
 
-* The host needs TCP port 27020 reachable. Forward the port, or use a VPN such as Tailscale, ZeroTier, or Radmin VPN and join using the host's VPN IP.
-* The server list discovers games on the same local network using UDP port 27021.
+* Use Online (Steam): it goes through Steam's relay, so nobody forwards a port. Everyone needs Steam running.
+* Or LAN / direct: the host needs TCP port 27020 reachable (forward it, or use a VPN such as Tailscale or ZeroTier and join the host's VPN IP).
+* The LAN server list discovers games on the same local network using UDP port 27021.
 
 Controls
 

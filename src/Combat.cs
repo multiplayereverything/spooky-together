@@ -72,7 +72,7 @@ namespace SpookyTogether
         public static bool BeforeTakeHit(SendMessageOnHit hit)
         {
             TogetherRuntime rt = Instance;
-            if (ApplyingHit || rt == null || hit == null || !rt.Connected || !rt.RunActive) return true;
+            if (ApplyingHit || rt == null || hit == null || !rt.Connected || !rt.RunActive || Mutant("hits")) return true;
             string key = HitKey(hit);
             string weapon = rt.LocalWeapon();
             rt.Broadcast(Wire.Packet(Op.Hit, w => { Wire.Text(w, key); Wire.Text(w, weapon ?? ""); }));

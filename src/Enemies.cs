@@ -52,6 +52,9 @@ namespace SpookyTogether
         static Transform spawnAnchor;   // process-scoped: one DontDestroyOnLoad helper object
         static Type[] specimenTypes;   // process-scoped: reflection cache
         public static bool AllowHostHurt, AllowEndSpecimen;
+        // The specimen whose Target() call ran last, and in which frame: a husk measures its distance, then hurts with
+        // its swarm as the source, so the husk is the attacker the swarm's hit belongs to.
+        static Component lastTargetSpecimen; static int lastTargetFrame = -1;
         static readonly List<int> scratchIds = new List<int>();   // process-scoped: scratch buffer
 
         void ResetEnemies()
@@ -61,6 +64,7 @@ namespace SpookyTogether
                 foreach (Puppet p in puppets.Values)
                     if (p.Obj != null && p.SceneKey == null) unpaired.Add(new Unpaired { Obj = p.Obj, SpecId = p.SpecId, At = float.MaxValue, Seq = int.MaxValue });
             List<Unpaired> kept = keptRunId > 0 && RunActive ? new List<Unpaired>(unpaired) : null;
+            lastTargetSpecimen = null; lastTargetFrame = -1;
             hostSpecs.Clear(); hostSpecIds.Clear(); hostSceneKeys.Clear(); hostTrackedObjects.Clear(); targetOf.Clear(); hostAnimators.Clear(); hostLegacy.Clear(); hostObjectNet.Clear(); nextNetId = 1;
             puppets.Clear(); unpaired.Clear(); puppetObjects.Clear(); snapshotSeq = -1; hostSpecCount = 0;
             if (kept != null) unpaired.AddRange(kept);
@@ -99,9 +103,10 @@ namespace SpookyTogether
             SpookyCharacterController player = SpookyCharacterController.GetInstance();
             Transform local = player != null ? player.transform : null;
             TogetherRuntime rt = Instance;
-            if (rt == null || !rt.Hosting || rt.peers.Count == 0 || local == null) return local;
+            if (rt == null || !rt.Hosting || rt.peers.Count == 0 || local == null || Mutant("retarget")) return local;
             Component specimen = OwnerOf(owner);
             if (specimen == null) return local;
+            lastTargetSpecimen = specimen; lastTargetFrame = Time.frameCount;
             return rt.ChooseTarget(specimen, player);
         }
 
@@ -237,9 +242,12 @@ namespace SpookyTogether
                 if (AllowHostHurt || specimen == null) return true;
                 return !rt.IsPuppet(specimen);
             }
-            if (specimen == null) return true;
+            if (specimen == null || Mutant("hurtrouting")) return true;
             int peerId;
-            if (!rt.targetOf.TryGetValue(specimen.GetInstanceID(), out peerId) || peerId < 0) return true;
+            bool known = rt.targetOf.TryGetValue(specimen.GetInstanceID(), out peerId);
+            if (!known && specimen is EndlessHuskSwarmController && lastTargetSpecimen != null && lastTargetFrame == Time.frameCount)
+                known = rt.targetOf.TryGetValue(lastTargetSpecimen.GetInstanceID(), out peerId);
+            if (!known || peerId < 0) return true;
             string killscreen = null;
             try { killscreen = source.killscreenName; } catch { }   // a destroyed specimen's getter throws
             rt.SendHurt(peerId, dmg, killscreen, doFx, fxDuration);
@@ -443,6 +451,39 @@ namespace SpookyTogether
             }
             catch (Exception ex) { Log("Specimen cleanup failed: " + ex.Message); Object.Destroy(obj); }
             finally { AllowEndSpecimen = false; }
+        }
+
+        // Specimens this client spawned while it had no host are nobody's copy: pair them with the host's spawns that follow
+        // the rejoin, or remove them like any other unconfirmed spawn.
+        void AdoptStraySpecimens()
+        {
+            SpecimenManager manager = Specimens;
+            if (manager == null || manager.activeSpecimens == null) return;
+            int adopted = 0;
+            foreach (GameObject spec in manager.activeSpecimens)
+            {
+                if (spec == null || puppetObjects.Contains(spec.GetInstanceID())) continue;
+                bool known = false;
+                foreach (Unpaired u in unpaired) if (u.Obj == spec) { known = true; break; }
+                if (known) continue;
+                SpecimenInterface si = spec.GetComponent<SpecimenInterface>();
+                string specId = null;
+                try { specId = si != null ? si.spawnedFromSpecId : null; } catch (Exception) { }   // a destroyed specimen's getter throws
+                if (string.IsNullOrEmpty(specId)) continue;
+                puppetObjects.Add(spec.GetInstanceID());
+                unpaired.Add(new Unpaired { Obj = spec, SpecId = specId, At = Time.realtimeSinceStartup, Seq = CurrentRoomSeq });
+                adopted++;
+            }
+            if (adopted > 0) Log("Rejoined with " + adopted + " specimen(s) spawned alone; pairing them with the host's.");
+        }
+
+        // At run end the game's ClearSpecimens only hid the host-driven copies (see BeforeEndSpecimen); end them for real
+        // so none stays in SpecimenManager.activeSpecimens (several are DontDestroyOnLoad) into the next run.
+        void EndPuppets()
+        {
+            if (!IsClient) return;
+            foreach (Puppet puppet in puppets.Values) if (puppet.Obj != null) { puppetObjects.Remove(puppet.Obj.GetInstanceID()); RemoveLocalSpecimen(puppet.Obj); }
+            puppets.Clear();
         }
 
         // Clients keep host-driven specimens until the host removes them; their local room logic may disagree.

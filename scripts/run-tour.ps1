@@ -1,6 +1,6 @@
 # Runs one scripted lab tour with hidden windows and judges it. Results go to artifacts/tests/<tour>-results.json.
-# Usage: run-tour.ps1 -Tour enemies [-Players 4] [-Seconds 120]
-param([Parameter(Mandatory)][string]$Tour, [int]$Players = 4, [int]$Seconds = 0, [string]$Mansion = '', [int]$MinRooms = -1, [int]$Lag = 0, [string]$Address = '127.0.0.1', [switch]$Online, [switch]$ModInfo)
+# Usage: run-tour.ps1 -Tour enemies [-Players 4] [-Seconds 120] [-Mutate retarget] (-Mutate turns fixes off; see mutants.ps1)
+param([Parameter(Mandatory)][string]$Tour, [int]$Players = 4, [int]$Seconds = 0, [string]$Mansion = '', [int]$MinRooms = -1, [int]$Lag = 0, [string]$Address = '127.0.0.1', [switch]$Steam, [string]$Mutate = '')
 $ErrorActionPreference = 'Stop'
 $modRoot = Split-Path $PSScriptRoot -Parent
 $tours = @{
@@ -36,7 +36,13 @@ if ($busy) {
 }
 $spec = $tours[$Tour]
 if ($Seconds -le 0) { $Seconds = $spec.Seconds }
-Get-ChildItem (Join-Path $modRoot 'private') -Filter 'spooky-together-lab.log' -Recurse -Depth 1 -ErrorAction SilentlyContinue | Remove-Item -Force
+# A copy stopped by the previous tour can hold its log for a few seconds while it exits (longer on a busy PC).
+foreach ($old in @(Get-ChildItem (Join-Path $modRoot 'private') -Filter 'spooky-together-lab.log' -Recurse -Depth 1 -ErrorAction SilentlyContinue)) {
+    for ($try = 0; $try -lt 30; $try++) {
+        try { Remove-Item -LiteralPath $old.FullName -Force -ErrorAction Stop; break }
+        catch { if ($try -eq 29) { throw "The lab log $($old.FullName) is still in use after 30 s." }; Start-Sleep 1 }
+    }
+}
 $hostArgs = '-st-auto-start -st-auto-door'
 $clientArgs = if ($Tour -eq 'serverlist') { '-st-join-lan' } else { '-st-auto-door' }
 if ($Tour -in @('soak', 'mansion')) { $hostArgs += ' -st-soak-spawn' }
@@ -50,39 +56,17 @@ if ($Tour -eq 'dollprops') { $hostArgs += ' -st-mansion dollhouse -st-god'; $cli
 if ($Mansion) { $out = Join-Path $modRoot "artifacts/tests/$Tour-$Mansion-results.json" }
 if ($Address -ne '127.0.0.1') { $out = Join-Path $modRoot ("artifacts/tests/$Tour-via-$Address" + $(if ($Lag -gt 0) { "-lag$Lag" } else { '' }) + "-results.json") }
 elseif ($Lag -gt 0) { $out = Join-Path $modRoot ("artifacts/tests/$Tour" + $(if ($Mansion) { "-$Mansion" } else { '' }) + "-lag$Lag-results.json") }
-$relayProcess = $null
-if ($Online) {
-    # Everyone plays through the global relay (mod-relay/relay.py) on a lab port: the host opens a public
-    # online room and each client finds it in the online list instead of using an address.
-    if ($Tour -eq 'serverlist') { throw 'The serverlist tour is LAN discovery; use another tour with -Online.' }
-    $relayPort = 7794
-    if (Get-NetTCPConnection -LocalPort $relayPort -State Listen -ErrorAction SilentlyContinue) { throw "Port $relayPort is in use: the lab won't share it." }
-    $relayScript = if ($env:MOD_RELAY) { $env:MOD_RELAY } else { (Join-Path $HOME 'Desktop\AIStuff\global-mods-server\relay.py') }
-    $relayProcess = Start-Process -FilePath 'python' -ArgumentList @('-u',('"'+$relayScript+'"'),'--port',$relayPort,'--log') -RedirectStandardOutput (Join-Path $modRoot 'private/relay-lab.log') -RedirectStandardError (Join-Path $modRoot 'private/relay-lab-err.log') -WindowStyle Hidden -PassThru
-    $serverArg = " -st-relay 127.0.0.1:$relayPort"
-    $infoProcess = $null
-    if ($ModInfo) {
-        # -ModInfo: no -st-relay; every copy learns the server from a local mods-info
-        # (github.com/multiplayereverything/mods-info) on port 7799.
-        $infoPort = 7799
-        if (Get-NetTCPConnection -LocalPort $infoPort -State Listen -ErrorAction SilentlyContinue) { throw "Port $infoPort is in use: the lab won't share it." }
-        $infoRoot = Join-Path $modRoot 'private/modinfo-lab'
-        New-Item -ItemType Directory -Force (Join-Path $infoRoot 'mods') | Out-Null
-        $utf8 = New-Object System.Text.UTF8Encoding($false)
-        [IO.File]::WriteAllText((Join-Path $infoRoot 'servers.json'), "{`"schema`":1,`"servers`":[{`"id`":`"main`",`"name`":`"Lab relay`",`"address`":`"127.0.0.1:$relayPort`",`"status`":`"online`"}]}", $utf8)
-        [IO.File]::WriteAllText((Join-Path $infoRoot 'mods/spooky.json'), "{`"schema`":1,`"id`":`"spooky`",`"name`":`"Spooky Together`",`"game`":`"Spooky's Jump Scare Mansion`",`"engine`":`"Unity`",`"status`":`"testing`",`"latest_version`":`"99.0`",`"min_version`":`"0.1`",`"protocol`":`"lab`",`"download_url`":`"`",`"changelog_url`":`"`",`"relay`":{`"mode`":`"tunnel`",`"max_players`":4,`"server`":`"main`"},`"notice`":`"`",`"updated`":`"2026-10-24`"}", $utf8)
-        $infoProcess = Start-Process -FilePath 'python' -ArgumentList @('-m','http.server',$infoPort,'--bind','127.0.0.1','--directory',('"'+$infoRoot+'"')) -RedirectStandardOutput (Join-Path $modRoot 'private/modinfo-lab.log') -RedirectStandardError (Join-Path $modRoot 'private/modinfo-lab-err.log') -WindowStyle Hidden -PassThru
-        $serverArg = " -st-online -st-modinfo http://127.0.0.1:$infoPort/"
-        # A saved Relay= from earlier labs would win over mods-info: clear it in every lab copy.
-        Get-ChildItem (Join-Path $modRoot 'private') -Filter 'SpookyTogether.ini' -Recurse -Depth 3 -ErrorAction SilentlyContinue | ForEach-Object {
-            (Get-Content -LiteralPath $_.FullName) | Where-Object { $_ -notmatch '^Relay=' } | Set-Content -LiteralPath $_.FullName
-        }
-        $spec.Expect = @($spec.Expect) + @('online.modinfo@host', 'client.online.modinfo')
-    }
-    $hostArgs += $serverArg
-    $clientArgs += "$serverArg -st-join-online"
-    $spec.Expect = @($spec.Expect) + @('online.room@host', 'client.online.found')
-    $out = Join-Path $modRoot ("artifacts/tests/$Tour-online" + $(if ($ModInfo) { '-modinfo' } else { '' }) + "-results.json")
+if ($Mutate) { $hostArgs += " -st-mutate $Mutate"; $clientArgs += " -st-mutate $Mutate"; $out = Join-Path $modRoot "artifacts/tests/mutants/$Tour-$($Mutate -replace ',', '+')-results.json" }
+if ($Steam) {
+    # Everyone finds the host through a real Steam lobby (tagged with this run, so no other game is joined) and talks
+    # over Steam Networking Sockets. Lab copies share one Steam account, which cannot reach itself peer to peer, so they
+    # connect over 127.0.0.1 through the same Steam sockets; P2P through Valve's relay needs two accounts.
+    if ($Tour -eq 'serverlist') { throw 'The serverlist tour is LAN discovery; use another tour with -Steam.' }
+    $tag = "lab" + (Get-Random -Maximum 1000000000)
+    $hostArgs += " -st-steam -st-steam-lab $tag"
+    $clientArgs += " -st-join-steam -st-steam-lab $tag"
+    $spec.Expect = @($spec.Expect) + @('steam.lobby@host', 'client.steam.found')
+    $out = Join-Path $modRoot "artifacts/tests/$Tour-steam-results.json"
 }
 # Endurance runs (soak, campaigns) last their full time; every other tour stops as soon as all its checks have passed.
 $early = $spec.Expect.Count -gt 0 -and $Tour -notin @('soak', 'mansion') -and !$spec.MinRooms
@@ -118,7 +102,7 @@ $rooms = if ($MinRooms -ge 0) { $MinRooms } else { $spec.MinRooms }
 if ($rooms) { $verify += @('--min-rooms', $rooms) }
 python -I @verify | Out-Null
 # Keep each tour's per-instance evidence; the next tour reuses the lab folders.
-$keep = Join-Path $modRoot ("artifacts/tests/logs/" + $(if ($Mansion) { "$Tour-$Mansion" } else { $Tour }) + $(if ($Lag -gt 0) { "-lag$Lag" } else { '' }))
+$keep = Join-Path $modRoot ("artifacts/tests/logs/" + $(if ($Mansion) { "$Tour-$Mansion" } else { $Tour }) + $(if ($Lag -gt 0) { "-lag$Lag" } else { '' }) + $(if ($Steam) { "-steam" } else { '' }) + $(if ($Mutate) { "-mutant-$($Mutate -replace ',', '+')" } else { '' }))
 New-Item -ItemType Directory -Force $keep | Out-Null
 foreach ($lab in 'lab-host','lab-client','lab-c2','lab-c3') {
     $src = Join-Path $modRoot "private/$lab/spooky-together-lab.log"
@@ -132,5 +116,3 @@ foreach ($p in $result.instances.PSObject.Properties) {
     $passed = @($i.checks | Where-Object pass).Count; $total = @($i.checks).Count
     Write-Output ("  {0}: checks {1}/{2}, seq {3}, errors {4}, heap slope {5} MB/10s, objects slope {6}, desync max {7}, mod ms median {8} max {9}, mod objects {10} (slope {11})" -f $p.Name, $passed, $total, $i.max_seq, $i.errors_end, $i.heap_slope_mb_per_10s, $i.objects_slope_per_10s, $i.desync_max, $i.modms_median, $i.modms_max, $i.modobjects_end, $i.modobjects_slope)
 }
-if ($relayProcess) { Stop-Process -Id $relayProcess.Id -Force -ErrorAction SilentlyContinue }
-if ($infoProcess) { Stop-Process -Id $infoProcess.Id -Force -ErrorAction SilentlyContinue }

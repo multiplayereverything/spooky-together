@@ -10,6 +10,7 @@ Checks (from the YokWare-multiplayer-game skill):
                      in a try/finally, or marked on its declaration: "// process-scoped" (caches, set-up),
                      "// call-scoped" (set and used within one call), or "// lab-only"
   catches.explained  every empty catch says why on the same line (a // comment)
+  mutants.listed     every Mutant("x") fix switch in src/ has a tour in scripts/mutants.ps1, and the other way round
   versions.agree     ModVersion matches MODLOG's top entry; Wire.Version matches the newest protocol in MODLOG
 Exit code 1 on any failure.
 """
@@ -109,6 +110,13 @@ for name, text in sources.items():
         if re.search(r"catch\s*(\([^)]*\))?\s*\{\s*(return[^;]*;\s*|continue;\s*)?\}", line) and "//" not in line.split("catch", 1)[1]:
             bare.append("%s:%d" % (name, n))
 check("catches.explained", not bare, ", ".join(bare) or "every empty catch says why")
+
+# --- Mutants ---------------------------------------------------------------------------------------
+in_src = set(re.findall(r'Mutant\("(\w+)"\)', everything))
+in_script = set(re.findall(r"^\s*'(\w+)'\s*=\s*'\w+'", read(os.path.join(ROOT, "scripts", "mutants.ps1")), re.M))
+check("mutants.listed", in_src == in_script and in_src,
+      "src only: %s; mutants.ps1 only: %s" % (sorted(in_src - in_script), sorted(in_script - in_src)) if in_src != in_script
+      else "%d fixes can be turned off, each with its tour: %s" % (len(in_src), ", ".join(sorted(in_src))))
 
 # --- Versions --------------------------------------------------------------------------------------
 mod_version = re.search(r'ModVersion\s*=\s*"([^"]+)"', everything).group(1)

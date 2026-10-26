@@ -42,6 +42,7 @@ namespace SpookyTogether
         {
             if (!forcedTransfer) return;
             forcedTransfer = false;
+            if (Mutant("stalelocks")) return;
             SpookyCharacterController player = SpookyCharacterController.GetInstance();
             if (player == null) return;
             int held = (downedLocks ? 1 : 0) + (panelLockedPlayer ? 1 : 0);

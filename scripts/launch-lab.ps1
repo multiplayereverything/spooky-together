@@ -24,8 +24,8 @@ $window = '-screen-fullscreen 0 -screen-width 640 -screen-height 360'
 $started = @()
 foreach ($lab in $labs) {
     $dir = Join-Path $modRoot "private/$($lab.Dir)"
-    # Every run starts in LAN mode: a tour that stopped early must not leave a copy in online mode (online tours pass
-    # -st-online / -st-relay, which override the saved setting).
+    # Every run starts in LAN mode: a tour that stopped early must not leave a copy in Steam mode (Steam tours pass
+    # -st-steam / -st-join-steam, which override the saved setting).
     $ini = Join-Path $dir 'UserData/SpookyTogether.ini'
     if (Test-Path $ini) { (Get-Content $ini) -replace '^Mode=.*$', 'Mode=lan' | Set-Content $ini }
     if ($lab.Loader -eq 'BepInEx') {

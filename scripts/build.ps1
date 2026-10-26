@@ -1,13 +1,22 @@
-param([ValidateSet('All','BepInEx','MelonLoader')][string]$Loader = 'All', [string]$OutDir)
+param([ValidateSet('All','BepInEx','MelonLoader')][string]$Loader = 'All', [string]$OutDir, [string]$GameDir)
 $ErrorActionPreference = 'Stop'
 $modRoot = Split-Path $PSScriptRoot -Parent
-$gameRoot = Split-Path $modRoot -Parent
-if (!(Test-Path -LiteralPath (Join-Path $gameRoot 'SpookyUnity.exe'))) { throw 'SpookyUnity.exe was not found next to MultiplayerMod.' }
+# The game folder: -GameDir, then $env:SPOOKY_GAME, then the parent folder (the old layout), then Steam's libraries.
+$candidates = @($GameDir, $env:SPOOKY_GAME, (Split-Path $modRoot -Parent))
+$steam = (Get-ItemProperty -Path 'HKCU:\Software\Valve\Steam' -ErrorAction SilentlyContinue).SteamPath
+if ($steam) {
+    $libraries = @($steam)
+    $vdf = Join-Path $steam 'steamapps/libraryfolders.vdf'
+    if (Test-Path -LiteralPath $vdf) { $libraries += Select-String -LiteralPath $vdf -Pattern '"path"\s+"([^"]+)"' | ForEach-Object { $_.Matches[0].Groups[1].Value -replace '\\\\', '\' } }
+    $candidates += $libraries | ForEach-Object { Join-Path $_ "steamapps/common/Spooky's Jump Scare Mansion HD Renovation" }
+}
+$gameRoot = $candidates | Where-Object { $_ -and (Test-Path -LiteralPath (Join-Path $_ 'SpookyUnity_Data/Managed/Assembly-CSharp.dll')) } | Select-Object -First 1
+if (!$gameRoot) { throw 'The game folder was not found. Pass -GameDir or set $env:SPOOKY_GAME.' }
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
 if (!(Test-Path -LiteralPath $compiler)) { throw 'The .NET Framework C# compiler is required.' }
 $managed = Join-Path $gameRoot 'SpookyUnity_Data/Managed'
-$common = @('Transport.cs','RelayLink.cs','ModInfo.cs','OnlineRelay.cs','Runtime.cs','Net.cs','Rooms.cs','Avatars.cs','Downed.cs','LanDiscovery.cs','Enemies.cs','SharedState.cs','Combat.cs','Endings.cs','PropRefresh.cs','SpecimenAudio.cs','Cutouts.cs','StaleLocks.cs','RoomLook.cs','DebugMenu.cs','Lab.cs','Tours.cs','Patches.cs') | ForEach-Object { Join-Path $modRoot "src/$_" }
-$references = @((Join-Path $managed 'Assembly-CSharp.dll'), (Join-Path $managed 'Rewired_Core.dll')) + @(Get-ChildItem -LiteralPath $managed -Filter 'UnityEngine*.dll' | ForEach-Object FullName)
+$common = @('Transport.cs','SteamNet.cs','SteamLobby.cs','Runtime.cs','Net.cs','Rooms.cs','Avatars.cs','Downed.cs','LanDiscovery.cs','Enemies.cs','SharedState.cs','Combat.cs','Endings.cs','PropRefresh.cs','SpecimenAudio.cs','Cutouts.cs','StaleLocks.cs','RoomLook.cs','DebugMenu.cs','Lab.cs','Tours.cs','Patches.cs') | ForEach-Object { Join-Path $modRoot "src/$_" }
+$references = @((Join-Path $managed 'Assembly-CSharp.dll'), (Join-Path $managed 'Rewired_Core.dll'), (Join-Path $managed 'com.rlabrecque.steamworks.net.dll')) + @(Get-ChildItem -LiteralPath $managed -Filter 'UnityEngine*.dll' | ForEach-Object FullName)
 $netstandard = Join-Path $managed 'netstandard.dll'
 if (Test-Path -LiteralPath $netstandard) { $references += $netstandard }
 foreach ($target in @('BepInEx','MelonLoader')) {

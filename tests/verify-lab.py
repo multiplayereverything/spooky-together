@@ -17,11 +17,17 @@ from pathlib import Path
 LABS = {"host": "lab-host", "c1": "lab-client", "c2": "lab-c2", "c3": "lab-c3"}
 METRIC = re.compile(r"ST-METRIC (.*)")
 CHECK = re.compile(r"ST-CHECK (\S+) (PASS|FAIL) ?(.*)")
+# A client logs each room it follows the host into; a short stay (an ending a second later) falls between metric samples.
+FOLLOWED = re.compile(r"Following host into room (\d+)")
 
 
 def parse(path):
     metrics, checks, moderrors = [], [], []
+    followed = -1
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        f = FOLLOWED.search(line)
+        if f:
+            followed = max(followed, int(f.group(1)))
         m = METRIC.search(line)
         if m:
             fields = dict(kv.split("=", 1) for kv in m.group(1).split() if "=" in kv)
@@ -32,7 +38,7 @@ def parse(path):
             checks.append((c.group(1), c.group(2) == "PASS", c.group(3)))
         if "ST-MODERROR" in line:
             moderrors.append(line.strip()[:400])
-    return metrics, checks, moderrors
+    return metrics, checks, moderrors, followed
 
 
 def slope(values):
@@ -65,7 +71,7 @@ def main():
         path = root / "private" / folder / "spooky-together-lab.log"
         if not path.exists():
             continue
-        metrics, checks, moderrors = parse(path)
+        metrics, checks, moderrors, followed = parse(path)
         info = {"checks": [{"name": n, "pass": p, "detail": d} for n, p, d in checks], "moderrors": moderrors[:5]}
         for n, p, d in checks:
             if not p:
@@ -85,7 +91,7 @@ def main():
                 "error_slope_per_10s": round(slope(err), 3),
                 "heap_slope_mb_per_10s": round(slope(heap), 3),
                 "objects_slope_per_10s": round(slope(objs), 2),
-                "max_seq": max(int(m.get("seq", -1)) for m in metrics),
+                "max_seq": max([int(m.get("seq", -1)) for m in metrics] + [followed]),
             })
             if slope(err) > 0.5:
                 failures.append(f"{role}: game errors keep growing ({slope(err):.2f} per 10 s)")

@@ -25,7 +25,7 @@ namespace SpookyTogether
 
     public sealed partial class TogetherRuntime : MonoBehaviour
     {
-        public const string ModVersion = "0.2.7";
+        public const string ModVersion = "0.2.8";
         public static TogetherRuntime Instance;   // process-scoped: the one runtime object
         public static Action<string> Log = delegate { };   // process-scoped: logger hook set by the loader entry
         public Transport Network;
@@ -98,18 +98,16 @@ namespace SpookyTogether
                 if (args[i] == "-st-shots") labShots = true;
                 if (args[i] == "-st-join-lan") { labJoinLan = true; labLanListen = true; autoRole = null; }
                 if (args[i] == "-st-lab-hurt") labHurt = true;
-                if (args[i] == "-st-relay" && i + 1 < args.Length) { Online = true; RelayAddress = args[++i]; } // online through the global relay
-                if (args[i] == "-st-modinfo" && i + 1 < args.Length) { modInfoUrl = args[++i]; modInfo = null; } // lab: mods-info from another URL
-                if (args[i] == "-st-online") Online = true; // lab: online mode with the server from mods-info
-                if (args[i] == "-st-join-online") { Online = true; labJoinOnline = true; autoRole = null; } // lab: join the first public online room
             }
+            ReadSteamArgs(args);
             Application.runInBackground = true;
             Log("SpookyTogether " + ModVersion + " ready. F5 opens the multiplayer panel. Game SHA256 " + gameHash);
         }
 
         void Start()
         {
-            if (autoRole == "host") { if (Online) StartHostOnline(); else StartHost(); }
+            // Steam may finish starting after the mod does: Steam hosting waits for it (UpdateSteam).
+            if (autoRole == "host") { if (OnSteamMode) steamHostPending = true; else StartHost(); }
             if (autoRole == "join") StartJoin();
         }
 
@@ -134,9 +132,8 @@ namespace SpookyTogether
                 if (key == "Name") Name = CleanName(value);
                 if (key == "Address") Address = value.Substring(0, Math.Min(128, value.Length)).Trim();
                 if (key == "Port") portText = value.Trim();
-                if (key == "Relay" && value.Trim().Length > 0) RelayAddress = value.Trim().Substring(0, Math.Min(128, value.Trim().Length));
-                if (key == "OnlinePublic") OnlinePublic = value.Trim() != "0";
-                if (key == "Mode") Online = value.Trim() == "online";
+                if (key == "SteamPublic") SteamPublic = value.Trim() != "0";
+                if (key == "Mode") OnSteamMode = value.Trim() == "steam";
                 int colour; if (key == "Colour" && int.TryParse(value, out colour)) Colour = (byte)Mathf.Clamp(colour, 0, Colours.Length - 1);
             }
         }
@@ -146,7 +143,7 @@ namespace SpookyTogether
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath));
-                File.WriteAllLines(SettingsPath, new[] { "Name=" + Name, "Address=" + Address, "Port=" + portText, "Colour=" + Colour, "Mode=" + (Online ? "online" : "lan"), "Relay=" + relayTyped, "OnlinePublic=" + (OnlinePublic ? 1 : 0) });
+                File.WriteAllLines(SettingsPath, new[] { "Name=" + Name, "Address=" + Address, "Port=" + portText, "Colour=" + Colour, "Mode=" + (OnSteamMode ? "steam" : "lan"), "SteamPublic=" + (SteamPublic ? 1 : 0) });
             }
             catch (Exception ex) { Log("Could not save settings: " + ex.Message); }
         }
@@ -193,7 +190,8 @@ namespace SpookyTogether
 
         public void Shutdown()
         {
-            if (IsClient && runId > 0 && RunActive) { keptRunId = runId; keptRunMansion = runMansion; }
+            if (IsClient && runId > 0 && RunActive) { keptRunId = runId; keptRunMansion = runMansion; keptRunSession = runSession; }
+            LeaveSteamLobby();
             if (Network != null)
             {
                 try { if (Connected) Broadcast(Wire.Packet(Op.Leave, null)); } catch { }   // best effort: the socket may already be gone
@@ -219,7 +217,7 @@ namespace SpookyTogether
         {
             if (Input.GetKeyDown(KeyCode.F5)) SetPanel(!show);
             DebugUpdate();
-            if (Network != null) PumpNetwork();
+            if (Network != null) { PumpNetwork(); if (Time.frameCount % 30 == 0) DropSilentJoiners(); }
             if (Connected && Time.realtimeSinceStartup >= nextPose) { nextPose = Time.realtimeSinceStartup + 1f / 15f; SendPose(); }
             if (Connected && Time.realtimeSinceStartup >= nextPing)
             {
@@ -228,7 +226,7 @@ namespace SpookyTogether
                 Broadcast(Wire.Packet(Op.Ping, null));
             }
             UpdateLanDiscovery();
-            UpdateOnline();
+            UpdateSteam();
             UpdateRooms();
             HostTick();
             if (Hosting && RunActive) { HostEnemyTick(); HostStateTick(); }
@@ -306,12 +304,14 @@ namespace SpookyTogether
             GUILayout.EndHorizontal();
             GUI.enabled = !Active;
             GUILayout.BeginHorizontal();
-            if (GUILayout.Toggle(!Online, "LAN / direct", "Button", GUILayout.Height(26)) && Online) Online = false;
-            if (GUILayout.Toggle(Online, "Online (global server)", "Button", GUILayout.Height(26)) && !Online) Online = true;
+            if (GUILayout.Toggle(!OnSteamMode, "LAN / direct", "Button", GUILayout.Height(26)) && OnSteamMode) OnSteamMode = false;
+            if (GUILayout.Toggle(OnSteamMode, "Online (Steam)", "Button", GUILayout.Height(26)) && !OnSteamMode) OnSteamMode = true;
             GUILayout.EndHorizontal();
-            if (Online) DrawOnlinePanel(labelStyle);
+            GUI.enabled = true;
+            if (OnSteamMode) DrawSteamPanel(labelStyle);
             else
             {
+                GUI.enabled = !Active;
                 GUILayout.Label("Host address (for joining)", labelStyle);
                 Address = GUILayout.TextField(Address, 128);
                 GUILayout.Label("Port", labelStyle);
@@ -332,7 +332,7 @@ namespace SpookyTogether
                 GUILayout.Label("- " + Name + (Hosting ? " (host, you)" : " (you)") + (LocallyDowned ? " - down" : ""), labelStyle);
                 foreach (Peer peer in peers.Values) if (peer.Accepted) GUILayout.Label("- " + peer.Name + (peer.Id == 0 ? " (host)" : "") + (peer.Downed ? " - down" : ""), labelStyle);
             }
-            if (!Active) { if (Online) DrawOnlineList(labelStyle); else DrawServerList(labelStyle); }
+            if (!Active) { if (OnSteamMode) DrawSteamList(labelStyle); else DrawServerList(labelStyle); }
             GUILayout.Label("F6 opens the debug menu (host only).", labelStyle);
             GUILayout.Label("Only the host starts runs. Doors any player opens move everyone on.", labelStyle);
             GUILayout.EndArea();

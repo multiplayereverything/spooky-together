@@ -18,6 +18,8 @@ namespace SpookyTogether
         // spawned outside the rooms they normally appear in, and hidden lab windows refusing a cursor lock.
         static readonly string[] knownGameErrors = { "EMKHMonster4Controller::UnpausedUpdate", "EMKHMonster6Controller::ActivateFromAccessory", "ClipCursor failed" };
         static string lastError = "";   // lab-only
+        // -st-mutate a,b turns those fixes off, so scripts/mutants.ps1 can prove each tour fails without its fix.
+        static readonly System.Collections.Generic.HashSet<string> mutants = new System.Collections.Generic.HashSet<string>();   // lab-only
         float nextMetric;
         float labJoinRetryAt;
         string labTour = "";
@@ -30,15 +32,17 @@ namespace SpookyTogether
             {
                 if (args[i] == "-st-lab") LabMode = true;
                 if (args[i] == "-st-tour" && i + 1 < args.Length) labTour = args[++i];
+                if (args[i] == "-st-mutate" && i + 1 < args.Length) foreach (string m in args[++i].Split(',')) if (m.Length > 0) mutants.Add(m);
                 if (args[i] == "-st-lag" && i + 1 < args.Length) { int lag; if (int.TryParse(args[++i], out lag)) { Transport.LagMs = Mathf.Clamp(lag, 0, 1000); Transport.JitterMs = Transport.LagMs / 2; } }
             }
-            if (!LabMode) { Transport.LagMs = 0; Transport.JitterMs = 0; return; }
+            if (!LabMode) { Transport.LagMs = 0; Transport.JitterMs = 0; mutants.Clear(); return; }
             try
             {
                 string path = Path.Combine(Root, "spooky-together-lab.log");
                 labLog = new StreamWriter(path, false) { AutoFlush = true };
                 Action<string> previous = Log;
                 Log = message => { previous(message); WriteLab(message); };
+                if (mutants.Count > 0) Log("Lab: fixes turned off: " + string.Join(",", mutants));
             }
             catch (Exception ex) { Log("Lab log unavailable: " + ex.Message); }
             Application.logMessageReceivedThreaded += CountErrors;
@@ -70,6 +74,9 @@ namespace SpookyTogether
             }
             lastError = condition ?? "";
         }
+
+        // True when the lab run turned this fix off (never outside -st-lab).
+        public static bool Mutant(string name) { return LabMode && mutants.Contains(name); }
 
         public static void Check(string name, bool pass, string detail)
         {

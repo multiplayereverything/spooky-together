@@ -10,7 +10,7 @@ namespace SpookyTogether
     // loads the same scene. Client doors only ask the host to move everyone on.
     public sealed partial class TogetherRuntime
     {
-        sealed class RoomInfo { public int Run, Seq, RoomKey, FloorKey, Seed; public string RoomId, Door; }
+        sealed class RoomInfo { public int Run, Seq, RoomKey, FloorKey, Seed, RootOffset; public string RoomId, Door; }
 
         int runId, hostSeq;
         string runMansion;
@@ -36,10 +36,15 @@ namespace SpookyTogether
         public int RoomSeed { get { return currentSeed; } }
 
         // A client that loses the host keeps its run identity, so reconnecting resumes the same run instead of restarting it.
-        int keptRunId; string keptRunMansion;
+        // The host's session id tells a reconnect apart from a host that restarted and began a new run 1.
+        int keptRunId, keptRunSession; string keptRunMansion;
+        int hostSession, runSession;
+        // A client that lost the host and loaded rooms alone is no longer in the host's room.
+        bool strayed;
 
         void ResetSession()
         {
+            hostSession = seeds.Next(1, int.MaxValue); runSession = 0;
             runId = 0; hostSeq = 0; runMansion = null; lastRoom = null; pendingRoom = null;
             consumedSeq = 0; interruptedSeq = 0; pendingStartMansion = null; hasSeed = false; waitingForHost = false;
             hostDoorAt = -100;
@@ -74,7 +79,7 @@ namespace SpookyTogether
             rt.Tell("Run started: " + rt.runMansion + ". Teammates are joining.");
         }
 
-        byte[] StartRunPacket() { return Wire.Packet(Op.StartRun, w => { w.Write(runId); Wire.Text(w, runMansion); }); }
+        byte[] StartRunPacket() { return Wire.Packet(Op.StartRun, w => { w.Write(runId); Wire.Text(w, runMansion); w.Write(hostSession); }); }
 
         void SendRunTo(int id)
         {
@@ -89,18 +94,20 @@ namespace SpookyTogether
         {
             int run = reader.ReadInt32();
             string mansion = Wire.Text(reader, 128);
+            int session = reader.ReadInt32();
             // Reconnected into the run we are already playing: keep going, the room and state packets follow.
-            if (RunActive && ((run == runId && mansion == runMansion) || (run == keptRunId && mansion == keptRunMansion)))
+            if (RunActive && ((run == runId && mansion == runMansion && session == runSession) || (run == keptRunId && mansion == keptRunMansion && session == keptRunSession)))
             {
-                runId = run; runMansion = mansion; keptRunId = 0;
-                // Still in the room the host announced last: no reload unless the host has moved on.
-                consumedSeq = interruptedSeq = Math.Max(0, CurrentRoomSeq); pendingRoom = null;
+                runId = run; runMansion = mansion; runSession = session; keptRunId = 0;
+                // Still in the room the host announced last: no reload unless the host has moved on (or we wandered off alone).
+                consumedSeq = interruptedSeq = strayed ? 0 : Math.Max(0, CurrentRoomSeq); pendingRoom = null; strayed = false;
+                AdoptStraySpecimens();
                 Tell("Rejoined the host's run.");
                 if (LabMode) Check("reconnect.rejoined", true, "run " + run);
                 return;
             }
-            keptRunId = 0;
-            runId = run; runMansion = mansion; pendingStartMansion = mansion;
+            keptRunId = 0; strayed = false;
+            runId = run; runMansion = mansion; runSession = session; pendingStartMansion = mansion;
             pendingRoom = null; consumedSeq = 0; interruptedSeq = 0; hasSeed = false;
             ResetDowned();
             ResetEnemies();
@@ -143,6 +150,7 @@ namespace SpookyTogether
             }
             if (rt.Hosting) rt.runMansion = null;
             rt.RestoreOptions(); rt.pendingFullState = null; rt.endingSent = null;
+            rt.EndPuppets();
             rt.ResetEnemies();
             if (wasDowned) rt.SendStatus(false);
         }
@@ -177,8 +185,11 @@ namespace SpookyTogether
                 {
                     interruptedSeq = pendingRoom.Seq;
                     PrepareForcedTransfer();
+                    // The host's room counter stayed put (a Dollhouse floor break, a scripted walk-in): so does ours.
+                    PersistenceData save = CurrentData;
+                    bool noIncrease = save != null && pendingRoom.Seq == consumedSeq + 1 && save.GetKey("room") == pendingRoom.RoomKey;
                     BypassTransfer = true;
-                    try { floor.TransferRequest(null, null, false); }
+                    try { floor.TransferRequest(null, null, noIncrease); }
                     finally { BypassTransfer = false; }
                 }
             }
@@ -190,13 +201,13 @@ namespace SpookyTogether
             return Wire.Packet(Op.Room, w =>
             {
                 w.Write(info.Run); w.Write(info.Seq); Wire.Text(w, info.RoomId); Wire.Text(w, info.Door ?? "");
-                w.Write(info.RoomKey); w.Write(info.FloorKey); w.Write(info.Seed);
+                w.Write(info.RoomKey); w.Write(info.FloorKey); w.Write(info.Seed); w.Write(info.RootOffset);
             });
         }
 
         void ClientRoom(BinaryReader reader)
         {
-            RoomInfo info = new RoomInfo { Run = reader.ReadInt32(), Seq = reader.ReadInt32(), RoomId = Wire.Text(reader, 200), Door = Wire.Text(reader, 200), RoomKey = reader.ReadInt32(), FloorKey = reader.ReadInt32(), Seed = reader.ReadInt32() };
+            RoomInfo info = new RoomInfo { Run = reader.ReadInt32(), Seq = reader.ReadInt32(), RoomId = Wire.Text(reader, 200), Door = Wire.Text(reader, 200), RoomKey = reader.ReadInt32(), FloorKey = reader.ReadInt32(), Seed = reader.ReadInt32(), RootOffset = reader.ReadInt32() };
             if (info.Door.Length == 0) info.Door = null;
             if (info.Run != runId) return;
             if (pendingRoom == null || info.Seq > pendingRoom.Seq) pendingRoom = info;
@@ -206,10 +217,12 @@ namespace SpookyTogether
         {
             HSMSystemsLoadState systems = state.pushOnComplete as HSMSystemsLoadState;
             TogetherRuntime rt = Instance;
+            if (systems != null && rt != null && !rt.Connected && rt.keptRunId > 0) rt.strayed = true;
             if (systems != null && rt != null && rt.Connected)
             {
                 rt.ReleaseStaleLocks();
-                if (rt.Hosting) rt.HostRoomLoading(systems);
+                // A failure here must not escape into the game's room-load state machine and stall it.
+                if (rt.Hosting) { try { rt.HostRoomLoading(systems); } catch (Exception ex) { Log("Announcing the room failed: " + ex); } }
                 else
                 {
                     while (rt.IsClient && rt.Connected && !(rt.pendingRoom != null && rt.pendingRoom.Run == rt.runId && rt.pendingRoom.Seq > rt.consumedSeq))
@@ -218,7 +231,7 @@ namespace SpookyTogether
                         yield return state;
                     }
                     rt.waitingForHost = false;
-                    if (rt.IsClient && rt.Connected) rt.ApplyRoom(state, systems);
+                    if (rt.IsClient && rt.Connected) { try { rt.ApplyRoom(state, systems); } catch (Exception ex) { Log("Following the host's room failed: " + ex); } }
                 }
             }
             while (original.MoveNext()) yield return original.Current;
@@ -232,7 +245,8 @@ namespace SpookyTogether
             RoomInfo info = new RoomInfo
             {
                 Run = runId, Seq = ++hostSeq, RoomId = data.roomConfig.uniqueRoomId, Door = data.namedSpawnDoor,
-                RoomKey = save != null ? save.GetKey("room") : 0, FloorKey = save != null ? save.GetKey("floor") : 0, Seed = seeds.Next()
+                RoomKey = save != null ? save.GetKey("room") : 0, FloorKey = save != null ? save.GetKey("floor") : 0, Seed = seeds.Next(),
+                RootOffset = RootFloorOffset()
             };
             lastRoom = info;
             if (info.Seq == 1) Broadcast(FullStatePacket());
@@ -261,8 +275,49 @@ namespace SpookyTogether
             state.sceneToLoad = config.sceneName;
             PersistenceData save = PersistenceManager.GetInstance() != null ? PersistenceManager.GetInstance().currentData : null;
             if (save != null) { save.SetKey("room", info.RoomKey); save.SetKey("floor", info.FloorKey); }
+            AlignFloor(info);
             ApplyPendingState();
             Log("Following host into room " + info.Seq + ": " + info.RoomId + " (" + config.sceneName + ")");
+        }
+
+        // How far the host is into its current floor, or -1 between floors (its transition rooms) and in Endless.
+        static int RootFloorOffset()
+        {
+            HSMFloorState floor = Closest<HSMFloorState>();
+            if (floor == null || floor.activeFloors == null || floor.activeFloors.Count == 0) return -1;
+            FloorConfigState root = floor.activeFloors[0];
+            if (root == null || root.floorConfig == null || root.relativeRoomOffset >= root.floorConfig.numRooms) return -1;
+            return root.relativeRoomOffset;
+        }
+
+        // A client's own floor counts rooms too (its room events, its floor's end). A client that joined mid-run, or
+        // whose count drifted, would end floors (and on the last floor, its run) at the wrong time: put its root floor
+        // where the host's is.
+        void AlignFloor(RoomInfo info)
+        {
+            if (info.RootOffset < 0) return;
+            HSMFloorState floor = Closest<HSMFloorState>();
+            HSMMansionState mansion = Closest<HSMMansionState>();
+            if (floor == null || mansion == null || mansion.mansion == null || mansion.mansion.isEndless || floor.activeFloors == null || floor.activeFloors.Count == 0) return;
+            if (info.FloorKey < 0 || mansion.mansion.floors == null || info.FloorKey >= mansion.mansion.floors.Length) return;
+            FloorConfig wanted = mansion.mansion.floors[info.FloorKey];
+            FloorConfigState root = floor.activeFloors[0];
+            if (root != null && root.floorConfig == wanted && floor.rootFloor == wanted)
+            {
+                if (root.relativeRoomOffset == info.RootOffset) return;
+                Log("Floor offset " + root.relativeRoomOffset + " -> the host's " + info.RootOffset);
+                root.relativeRoomOffset = info.RootOffset;
+                while (root.roomEvents.Count > 0 && root.roomEvents[0].relativeRoom <= info.RootOffset) root.roomEvents.RemoveAt(0);
+                return;
+            }
+            FloorConfigState fresh = new FloorConfigState();
+            fresh.Initialize(mansion.mansion, wanted, info.RootOffset, false, info.FloorKey);
+            // The room event at this offset already ran on the host; it must not fire again here on the next room.
+            fresh.ClearActiveRoomEvent();
+            floor.rootFloor = wanted;
+            floor.activeFloors[0] = fresh;
+            if (wanted.unlockCatDosSpecimen != null && mansion.currentData != null) mansion.currentData.UnlockCatDosSpecs(wanted.unlockCatDosSpecimen);
+            Log("Floor moved to the host's floor " + info.FloorKey + " at room offset " + info.RootOffset);
         }
 
         // The same seed on every machine picks the same spawn door, so teammates appear together.

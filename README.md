@@ -1,16 +1,24 @@
 # Spooky Together
 
-LAN/VPN co-op for **Spooky's Jump Scare Mansion: HD Renovation** (Steam build, Unity 2021.3 Mono), for 2–4 players. Separate builds exist for BepInEx 5 and MelonLoader 0.7; each copy of the game uses only one loader. Players on different loaders can play together.
+Online (Steam) and LAN co-op for **Spooky's Jump Scare Mansion: HD Renovation** (Steam build, Unity 2021.3 Mono), for 2–4 players. Separate builds exist for BepInEx 5 and MelonLoader 0.7; each copy of the game uses only one loader. Players on different loaders can play together.
 
 ## How to play
 1. Install the mod (below) on every PC. Everyone needs the same game version and the same mod version.
 2. Launch the game through Steam as usual.
 3. Press **F5** to open the multiplayer panel, then set your name and colour.
-4. One player presses **Host**. Port **27020** (TCP) must be reachable: forward it, or share a LAN or a VPN such as Tailscale or ZeroTier.
-5. Everyone else either:
-   - picks the host's game from the **server list** in the same panel (games on your network appear on their own), or
-   - types the host's address and presses **Join**.
-6. The host starts a run from the main menu (New Game or Continue). Every client is pulled into the same mansion automatically.
+4. Pick **Online (Steam)** or **LAN / direct**.
+5. **Online (Steam):** no port forwarding or VPN. Players connect peer to peer through Steam's relay.
+   - The host presses **Host on Steam**. Leave "List my game publicly" on to show the game in everyone's Steam list, or turn it off for friends and invites only.
+   - Friends join in any of these ways:
+     - pick the game from the **Steam games** list in the panel;
+     - press **Join Game** on the host's Steam profile;
+     - accept the host's invite (**Invite Steam friends** in the panel). An invite also starts the game if it isn't running.
+6. **LAN / direct:** port **27020** (TCP) must be reachable on the host. Forward it, or share a LAN or a VPN such as Tailscale or ZeroTier.
+   - One player presses **Host**.
+   - Everyone else either:
+     - picks the host's game from the **server list** (games on your network appear on their own), or
+     - types the host's address and presses **Join**.
+7. The host starts a run from the main menu (New Game or Continue). Every client is pulled into the same mansion automatically.
 
 ## Debug menu (F6)
 Only the host can open it; on a client F6 just shows a message.
@@ -70,6 +78,7 @@ Only the host can open it; on a client F6 just shows a message.
 - **The AFK Taker** (Specimen 9) appears only for the player who idles.
 - **If the host disconnects,** clients keep playing alone; there is no host migration.
 - **Starting the exe directly** without Steam makes the game quit and relaunch through Steam. Launch it through Steam.
+- **Online play needs Steam** running and signed in on every PC. Steam's peer-to-peer relay has only been tested between lab copies on one PC (one Steam account), not yet between two accounts.
 
 ## Install
 - **BepInEx 5.4.23:**
@@ -79,11 +88,12 @@ Only the host can open it; on a client F6 just shows a message.
   1. Install MelonLoader to `SpookyUnity.exe`.
   2. Copy `SpookyTogether.MelonLoader.dll` to `Mods/`.
 
-Settings are saved in `UserData/SpookyTogether.ini`. The server list uses UDP port 27021 on your local network.
+Settings are saved in `UserData/SpookyTogether.ini`. The LAN server list uses UDP port 27021 on your local network. Online play needs no ports: it uses Steam.
 
 ## Building and testing
 - **Build:** `scripts/build.ps1` builds both loaders into `artifacts/`. It needs the .NET Framework `csc.exe` and the loader DLLs under `deps/`.
-- **Source rules:** `python tests/rules-test.py` checks the message handlers, static-state resets, empty catches and version numbers in seconds, with no game or build.
+- **Source rules:** `python tests/rules-test.py` checks the message handlers, static-state resets, empty catches, mutation switches and version numbers in seconds, with no game or build.
+- **Transport:** `scripts/test-transport.ps1` checks the LAN path without the game: joins, a full game refusing with a reason, a bad frame's logged cause.
 - **Test:** `scripts/run-tour.ps1 -Tour <name> [-Players 4]` starts up to four isolated lab copies, with windows hidden: a BepInEx host and MelonLoader/BepInEx clients. It runs one scripted tour, stops its own processes, and judges the run with `tests/verify-lab.py`. Results go to `artifacts/tests/<tour>-results.json`.
 
 | Tour | What it checks |
@@ -102,7 +112,11 @@ Settings are saved in `UserData/SpookyTogether.ini`. The server list uses UDP po
 
 The lab players act like real players: they open real doors, use local doors, pick up the axe and chop boards.
 
-Any tour accepts `-Lag <ms>`, which adds that one-way delay plus up to half again as jitter to every packet, to test slow links.
+Any tour accepts `-Lag <ms>`, which adds that one-way delay plus up to half again as jitter to every packet, to test slow links (LAN path only).
+
+Any tour except `serverlist` accepts `-Steam`. The host opens a real Steam lobby; clients find it in the Steam list and connect through Steam Networking Sockets. The lab copies share one Steam account, which can't connect to itself peer to peer, so they use the same Steam sockets over 127.0.0.1.
+
+**Mutation check:** `scripts/mutants.ps1` turns one fix off at a time (`-st-mutate`, lab only) and runs the tour that guards it. Every tour must fail without its fix: retargeting, hit routing, shared keys, weapon hits, elevator presses, stale locks.
 
 Every run also judges:
 - error count;

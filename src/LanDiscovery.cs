@@ -34,7 +34,7 @@ namespace SpookyTogether
         void UpdateLanDiscovery()
         {
             float now = Time.realtimeSinceStartup;
-            if (Hosting && !Network.Relayed) { if (now >= nextLanBeacon) { nextLanBeacon = now + 1; SendLanBeacon(now); } }
+            if (Hosting && !Network.OnSteam) { if (now >= nextLanBeacon) { nextLanBeacon = now + 1; SendLanBeacon(now); } }
             else if (lanBeacon != null) { lanBeacon.Close(); lanBeacon = null; }
             if ((show && !Active) || labLanListen) PollLanGames(now);
             else CloseLanListener();
@@ -120,6 +120,8 @@ namespace SpookyTogether
             if (fields.Length != 8 || fields[0] != DiscoveryMagic || !int.TryParse(fields[1], out protocol) || fields[2].Length > 16 || fields[3].Length != 32
                 || !int.TryParse(fields[5], out port) || port < 1024 || port > 65535 || !int.TryParse(fields[6], out players) || players < 1 || players > 4) return;
             if (fields[3] == lanKey) return;
+            // A LAN has a handful of games; a flood of made-up keys must not grow the list without limit.
+            if (lanGames.Count >= 32 && !lanGames.ContainsKey(fields[3])) return;
             LanGame existing;
             bool loopback = IPAddress.IsLoopback(from.Address);
             // The same game arrives by loopback and by broadcast; keep the LAN address friends can also use.

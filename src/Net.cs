@@ -19,6 +19,17 @@ namespace SpookyTogether
 
         void SendToHost(byte[] packet) { if (IsClient && self > 0) Network.Send(0, packet); }
 
+        // A joiner that connects but never says Hello (a stuck or older client) gives its slot back after 15 s.
+        void DropSilentJoiners()
+        {
+            if (!Hosting) return;
+            float now = Time.realtimeSinceStartup;
+            scratchPeers.Clear();
+            foreach (Peer peer in peers.Values) if (!peer.Accepted && now - peer.LastHeard > 15) scratchPeers.Add(peer.Id);
+            foreach (int id in scratchPeers) { Log("Dropping peer " + id + ": no Hello in 15 s"); Network.Drop(id); }
+        }
+        static readonly List<int> scratchPeers = new List<int>();   // process-scoped: scratch buffer
+
         void PumpNetwork()
         {
             NetworkEvent e;
@@ -34,7 +45,7 @@ namespace SpookyTogether
 
         void HandleEvent(NetworkEvent e)
         {
-            if (HandleRelayEvent(e)) return;
+            if (e.Kind == "log") { Log(e.Message); return; }
             if (e.Kind == "error")
             {
                 Tell("Network error: " + e.Message);
@@ -49,6 +60,7 @@ namespace SpookyTogether
             }
             if (e.Kind == "disconnected")
             {
+                if (e.Message != null) Log("Link " + e.Peer + " ended: " + e.Message);
                 if (!Hosting) { Shutdown(); Tell("Lost connection to the host. You keep playing alone."); return; }
                 Peer gone;
                 if (peers.TryGetValue(e.Peer, out gone))

@@ -18,6 +18,7 @@ namespace SpookyTogether
             Patch(typeof(HSMLoadRoomState), "RunRoutine", null, "LoadRoomPostfix");
             Patch(typeof(HSMRoomReadyState), "EnterStateInternal", "RoomReadyPrefix", "RoomReadyPostfix");
             Patch(typeof(HSMFloorState), "TransferRequest", "TransferPrefix", null, typeof(string), typeof(string), typeof(bool));
+            PatchFloorEvents();
             Patch(typeof(HSMMenuState), "StartMansion", "StartMansionPrefix", "StartMansionPostfix");
             Patch(typeof(HSMGameRootState), "KillPlayer", "KillPlayerPrefix", null);
             Patch(typeof(SpookyCharacterController), "OnRoomReady", null, "OnRoomReadyPostfix");
@@ -91,6 +92,23 @@ namespace SpookyTogether
             }
             catch (Exception ex) { failed++; TogetherRuntime.Log("Patch failed " + type.Name + "." + name + ": " + ex.Message); }
         }
+
+        // FloorConfigState.IncrementRoomOffset runs a floor's room events (SetKey at room N). A finalizer, not a postfix,
+        // ends the local-only window, so a throwing event cannot leave every later key unshared.
+        static void PatchFloorEvents()
+        {
+            try
+            {
+                MethodInfo target = AccessTools.Method(typeof(FloorConfigState), "IncrementRoomOffset");
+                if (target == null) throw new MissingMethodException("FloorConfigState", "IncrementRoomOffset");
+                harmony.Patch(target, prefix: new HarmonyMethod(typeof(ModHooks), "FloorEventPrefix"), finalizer: new HarmonyMethod(typeof(ModHooks), "FloorEventFinalizer"));
+                applied++;
+            }
+            catch (Exception ex) { failed++; TogetherRuntime.Log("Patch failed FloorConfigState.IncrementRoomOffset: " + ex.Message); }
+        }
+
+        static void FloorEventPrefix(out bool __state) { __state = TogetherRuntime.BeginLocalFloorEvent(); }
+        static void FloorEventFinalizer(bool __state) { if (__state) TogetherRuntime.ApplyingState = false; }
 
         static void LoadRoomPostfix(HSMLoadRoomState __instance, ref IEnumerator<HSMBaseState> __result)
         {
