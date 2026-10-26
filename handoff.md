@@ -19,7 +19,7 @@ The user's standing requirements:
 - **Moved 2026-10-25:** the source moved from `<game>/MultiplayerMod` to `ai-work-pc-games/Spooky Mulitplayer Mod`. `build.ps1` finds the game itself; the lab copies (`private/lab-*`) still hardlink and junction into `<game>`.
 - **Online:** Steam lobbies plus Steam Networking Sockets P2P (`SteamLobby.cs`, `SteamNet.cs`). The global relay, room codes and mods-info are gone. LAN / direct (TCP 27020) and the LAN list (UDP 27021) remain.
 - **Tests (0.2.9):** quick suite 15 tours, all passing (two after load reruns); 11 mutation switches, none survived; `state` and `enemies` over Steam ran on 0.2.8 (`MODLOG.md`). The full suite has not run since 0.2.2.
-- **Releases:** every version is a tagged GitHub release, pre-release while untested (the Discord bot announces them). v0.2.8 and v0.2.9 are not published yet: waiting for the user's OK.
+- **Releases:** every version is a tagged GitHub release, pre-release while untested (the Discord bot announces them). v0.2.8 and v0.2.9 are published as pre-releases with their ZIPs (2026-10-26). `scripts/package.ps1` builds the ZIPs; lint them with `um publish check` before uploading.
 - **Installed:** 0.2.9 BepInEx build in `<game>/BepInEx/plugins/SpookyTogether/` (SHA256 d033dcdf…d33b, the build the last tours ran), with BepInEx 5.4.23.5. Not launched by hand yet.
 
 ## Next steps
