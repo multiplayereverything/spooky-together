@@ -122,7 +122,7 @@ check("mutants.listed", in_src == in_script and in_src,
 mod_version = re.search(r'ModVersion\s*=\s*"([^"]+)"', everything).group(1)
 wire_version = int(re.search(r"const int Version\s*=\s*(\d+)", everything).group(1))
 modlog = read(os.path.join(ROOT, "MODLOG.md"))
-top = re.search(r"^## (\S+)", modlog, re.M).group(1)
+top = re.search(r"^## (?!Unreleased)(\S+)", modlog, re.M).group(1)   # an "Unreleased" section may sit above the newest version
 protocols = re.findall(r"^## .*?protocol (\d+)", modlog, re.M)
 newest = int(protocols[0]) if protocols else -1
 check("versions.agree", top == mod_version and newest == wire_version,

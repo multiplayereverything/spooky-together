@@ -374,7 +374,7 @@ namespace SpookyTogether
                     }
             // Retried (LeaveRun waits 3 s between tries): a run still loading can ignore the first request.
             if (labRestartRun) { if (RunActive) LeaveRun(); else labRestartRun = false; }
-            if (labAutoStart && Hosting && AcceptedCount > 0 && (AcceptedCount + 1 >= labExpect ? Time.realtimeSinceStartup - lastJoinAt > 8 : Time.realtimeSinceStartup - lastJoinAt > 90))
+            if (labAutoStart && Hosting && (AcceptedCount > 0 || labExpect == 1) && (AcceptedCount + 1 >= labExpect ? Time.realtimeSinceStartup - lastJoinAt > 8 : Time.realtimeSinceStartup - lastJoinAt > 90))
             {
                 HSMMenuState menu = Closest<HSMMenuState>();
                 AssetDataManager assets = AssetDataManager.GetInstance();

@@ -1,5 +1,10 @@
 # Spooky Together mod log
 
+## Unreleased (lab only, after 0.2.11)
+- **One-player lab runs:** `run-tour.ps1 -Players 1` now starts the run (auto-start waited for a client). Used for control runs without the mod's peers.
+- **EMKHMonster5 control run:** spawned with the host alone (`latelook -Players 1`) with 0 game errors, but the host stayed in room 2, so the room-change case was not reached. A 4-player `latelook` rerun also had 0 errors, against 1 per copy in the full suite, so the error is intermittent and still unproven either way.
+- **Kept-player chase coverage:** Frenzy and the Hooked Doll are room-local specimens and Nightmare is a plain behaviour in room scenes; none has a specimen config, so the `chase` tour cannot spawn them (tried and reverted). See the handoff.
+
 ## 0.2.11 (2026-10-27): a held ending can no longer stall, protocol 9
 Request: carry on from the handoff on a new PC (fix the takerbail ending hold, rerun the mutants and suites, release). Playbook used: Co-op Anything `lessons` 7 (bugs live in transitions), 4 (poll, don't check once) and 42 (force rare event orders directly).
 

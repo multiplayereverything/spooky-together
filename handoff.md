@@ -19,6 +19,7 @@ The user's standing requirements:
 - **Real play:** the owner played with three or more friends on separate PCs and Steam accounts, four players together, with no problems (2026-10-27).
 - **Website:** graded A, "available". The Website session (local_211a3291-3165-4fdf-8d32-3da6780cf595) keeps it in sync; Co-op Anything write-up: PR cranebeaker/coop-anything#221 (branch `game/spooky-jump-scare-mansion` on multiplayereverything/coop-anything).
 - **Working rules (user, 2026-10-27):** don't stop to ask; make the call and note it here and in MODLOG. Lab copies start minimized and small (see AGENTS.md), one tour at a time. Use the Co-op Anything MCP and coop-* skills and say which page was used. End each batch with a results table.
+- **No uploads until told (user, 2026-10-27):** no `git push`, releases, PR or issue updates. Commit locally and list what is ready to push. v0.2.11 (`ad0253e`) and the PR #221 update (`6cc9c53`) went up before this rule arrived.
 
 ## Setting up on a new PC
 Everything below except the GitHub repo lives outside git; rebuild it as follows.
@@ -67,9 +68,10 @@ Everything below except the GitHub repo lives outside git; rebuild it as follows
    - `puzzles` uses a test puzzle segment;
    - `lateending` simulates a late or lost ending;
    - the kept-player retargeting is watched end to end for Specimen 8 only (`chase`); Spec6, Hooked Doll, Frenzy and Nightmare are checked by counting rewritten reads.
+     Checked 2026-10-27: Frenzy (`FrenzyControl`) and the Hooked Doll are `LocalSpecimenInterface` specimens and Nightmare is a plain `MonoBehaviour`. All three live in particular room scenes and have no specimen config, so `StartSpecimen` cannot spawn them. An end-to-end check needs a tour that travels to their rooms. Spec6 drops in and teleports, with no steady chase signal. A `chase` extension that looked them up by prefab found no config for Frenzy or Nightmare and was reverted.
 5. **Steam lobby membership (reviewed 2026-10-27, left open on purpose):** the host accepts any Steam P2P connection, not only lobby members. A strict check needs a grace period (the member list and the connection request arrive by different paths) and a two-account test; see MODLOG 0.2.11.
 6. **Window title on MelonLoader copies:** the launcher hides MelonLoader's console and names only the Unity window; if a copy shows "SpookyHD", its window appeared after 15 s.
-7. **EMKHMonster5's update error at a room change** is listed as a known game error (it shows on the host too) without a host-only control run. Confirm it in single-player, or guard it, if it shows up in real play.
+7. **EMKHMonster5's update error at a room change** is listed as a known game error. It is intermittent: 1 error per copy in the 0.2.11 full suite, 0 in a 4-player rerun and 0 with the host alone (2026-10-27, `latelook -Players 1`, which never changed room). A real control needs the host alone to change room after the spawn, repeated several times. Guard it if it shows up in real play.
 
 ## Safety
 - **Lab copies:** `private/lab-{host,client,c2,c3}` use hardlinks and junctions, so never edit game bytes through them.
