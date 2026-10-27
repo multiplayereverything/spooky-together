@@ -6,6 +6,12 @@ Start with `handoff.md` (current state, next steps) and `README.md` (behaviour, 
 - **Game code:** the decompiled game is in `private/decompiled`, and its Graphify graph is in `private/decompiled/graphify-out`. For "where does the game do X", read `GRAPH_REPORT.md` and use `graphify query/explain` there before grepping.
 - **Mod code:** the mod's own graph is `graphify-out/` in this folder. Run `graphify update .` after code changes.
 
+## How to work (Karpathy guidelines, adapted)
+- **State assumptions, don't hide them.** When something is unclear, pick the most likely reading, say so, and note the call in `MODLOG.md` and `handoff.md` (the user asked not to be stopped with questions). Say when a simpler approach exists.
+- **Simplest change that works.** No features, options or abstractions nobody asked for, and no handling for cases that cannot happen. If a fix could be half the size, rewrite it.
+- **Surgical edits.** Touch only what the task needs; match the surrounding style; don't reformat or refactor working code. Remove only what your own change left unused, and mention other dead code rather than deleting it.
+- **Prove it.** Turn each task into a check before coding: a tour that fails without the fix (a `Mutant` switch in `mutants.ps1`), `tests/rules-test.py` for rules. Loop until it passes, and report what was not verified.
+
 ## How the mod hooks the game (all in `src/Patches.cs`)
 | Hook | Purpose |
 | --- | --- |
