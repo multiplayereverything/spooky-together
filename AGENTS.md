@@ -27,7 +27,7 @@ Start with `handoff.md` (current state, next steps) and `README.md` (behaviour, 
 | `PersistenceData.SetKey` / `ClearKey` / `AddToInventory` / `RemoveFromInventory*` | Shared run state, relayed through the host; 10 s checksum plus full snapshot repair. Changes behind a client's pending snapshot are replayed on top of it. |
 | `PickUpItem`, `PickupComponent`, `WeaponPickupComponent` `.OnInteract`; `DoorComponent` / `LocalDoorComponent` `.Unlock` | Object state by scene key; weapon pickups arm everyone. |
 | `SendMessageOnHit.TakeHit`, `SpookyCharacterController.CurrentWeapon`, `SwingableWeaponConfig` / `M1WeaponConfig` `.DoHitTest` | Hit relay (specimens host-only), attacker's weapon during a replayed hit, swing display. |
-| `HSMGameRootState.GotoKillscreen` | Endings: the host broadcasts; a client's call becomes a request to the host. A client outside the run holds the ending for 30 s; the host's end-of-run after an ending takes a stranded client out. |
+| `HSMGameRootState.GotoKillscreen` | Endings: the host broadcasts; a client's call becomes a request to the host. A client outside the run holds the ending for 30 s; one mid room load holds it until the room is ready, or 3 s with no load running and no state transition; the host's end-of-run after an ending takes a stranded client out. |
 | `DollhouseFurnaceControl` actions (prefix) | Re-read the shared door/lever/key values; refuse an action that no longer applies; a client's action runs on the host's furnace (`ObjectUsed` kind 7). |
 | `PuzzleStateExister.RunConditions` (postfix); `PersistenceData` writes (`ReplayWritePrefix`) | Native runs mark segments met; a segment replayed by `PropRefresh` writes no keys or items. |
 | `EndlessSkipRoomUIControl.StartInteraction` | Host-only skip-room TV. |
@@ -38,7 +38,7 @@ Start with `handoff.md` (current state, next steps) and `README.md` (behaviour, 
 - **Lab:** `run-tour.ps1 -Steam` uses a real lobby. The copies share one Steam account, so they connect over 127.0.0.1 through the same Steam sockets.
 
 ## Repository
-- **GitHub:** https://github.com/multiplayereverything/spooky-together (private). Commit and push after each version.
+- **GitHub:** https://github.com/multiplayereverything/spooky-together (public). Commit and push after each version.
 - **Identity:** commits use the repo's local identity (`multiplayereverything`, the GitHub no-reply address), never a personal email.
 - **Before pushing:** run `python tests/rules-test.py`, and lint `git archive HEAD` with the Universal Modder publish check against `SpookyUnity_Data`. Keep personal paths out of scripts (use `$HOME`).
 - **Ignored:** `private/`, `deps/`, `artifacts/`, `graphify-out/`, `*.ini`, `*.log`.
@@ -47,7 +47,7 @@ Start with `handoff.md` (current state, next steps) and `README.md` (behaviour, 
 ## Rules
 - **Statics:** a new static field is cleared in a reset method or marked `// process-scoped`, `// call-scoped` or `// lab-only` on its line; an empty `catch` says why on its line. `tests/rules-test.py` enforces both.
 - **Build and test:** build with `scripts/build.ps1`. Test with `scripts/run-tour.ps1 -Tour <enemies|state|axe|ending|clientending|serverlist|soak> [-Steam]`. `scripts/mutants.ps1` proves each guarded fix's tour fails without it; a new `Mutant("x")` switch needs its tour listed there (`rules-test.py` checks).
-  - Windows are hidden; up to 4 lab copies run: host (BepInEx), c1 (MelonLoader), c2 (BepInEx), c3 (MelonLoader).
+  - Up to 4 lab copies run: host (BepInEx), c1 (MelonLoader), c2 (BepInEx), c3 (MelonLoader). They start minimized as small titled windows ("Spooky lab - host"), lowest quality, 30 fps, BelowNormal priority, restoring at the right edge of the screen; placed once and never activated, so the user can open or move them. `-Hidden` hides them. Run one tour at a time: other mods' labs share this PC.
   - Per-instance evidence is `private/lab-*/spooky-together-lab.log` (`ST-CHECK`, `ST-METRIC`, `ST-MODERROR`). Unity logs are in `private/lab-logs/`.
   - Never feed fake inventory ids: the game's HUD throws on unknown items inside a room-ready task and stalls its state machine.
 - **Process safety:** stop only the PIDs in `private/lab-pids.txt`. Never kill a user-owned game process.

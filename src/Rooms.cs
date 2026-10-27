@@ -72,11 +72,12 @@ namespace SpookyTogether
         {
             TogetherRuntime rt = Instance;
             if (rt == null || !rt.Hosting || mansionConfig == null) return;
-            // Lab: hidden lab windows can still take controller or keyboard input and start a run from the menu. A tour
-            // that needs another mansion goes back to the menu and starts its own.
-            if (LabMode && rt.labMansion != null && mansionConfig.uniqueIdentifier != rt.labMansion)
+            // Lab: lab windows can still take controller or keyboard input and start a run from the menu, sometimes before
+            // every client has joined (takerbad, 2026-10-27). Any run the lab's auto-start did not begin, and any run of
+            // the wrong mansion, goes back to the menu, and the lab starts its own.
+            if (LabMode && (rt.labAutoStart || (rt.labMansion != null && mansionConfig.uniqueIdentifier != rt.labMansion)))
             {
-                Log("Lab: " + mansionConfig.uniqueIdentifier + " started without the lab; going back for " + rt.labMansion);
+                Log("Lab: " + mansionConfig.uniqueIdentifier + " started without the lab; going back for " + (rt.labMansion ?? "the lab's own run"));
                 rt.labAutoStart = true; rt.labRestartRun = true;
                 return;
             }
@@ -132,6 +133,8 @@ namespace SpookyTogether
 
         void ClientEndRun()
         {
+            // Lab (loadending): the host's end-of-run follows its ending at once; it waits with the held ending.
+            if (labHeldEnding != null) { labHeldEndRun = true; return; }
             pendingStartMansion = null; pendingRoom = null; runMansion = null;
             // Right after an ending the killscreen is taking this game out of the run itself (it may not have yet this
             // frame): check in 10 s instead, and leave then if it is still in the run.
@@ -169,7 +172,7 @@ namespace SpookyTogether
                 if (!gameOver) rt.Tell("Run ended.");
             }
             if (rt.Hosting) rt.runMansion = null;
-            rt.RestoreOptions(); rt.pendingFullState = null; rt.pendingDeltas.Clear(); rt.endingSent = null;
+            rt.RestoreOptions(); rt.pendingFullState = null; rt.pendingDeltas.Clear(); rt.endingSent = null; rt.roomLoads = 0;
             rt.EndPuppets();
             rt.ResetEnemies();
             if (wasDowned) rt.SendStatus(false);
@@ -240,24 +243,39 @@ namespace SpookyTogether
             HSMSystemsLoadState systems = state.pushOnComplete as HSMSystemsLoadState;
             TogetherRuntime rt = Instance;
             if (systems != null && rt != null && !rt.Connected && rt.keptRunId > 0) rt.strayed = true;
-            if (systems != null && rt != null && rt.Connected)
+            if (rt != null) rt.roomLoads++;
+            try
             {
-                rt.ReleaseStaleLocks();
-                // A failure here must not escape into the game's room-load state machine and stall it.
-                if (rt.Hosting) { try { rt.HostRoomLoading(systems); } catch (Exception ex) { Log("Announcing the room failed: " + ex); } }
-                else
+                if (systems != null && rt != null && rt.Connected)
                 {
-                    while (rt.IsClient && rt.Connected && !(rt.pendingRoom != null && rt.pendingRoom.Run == rt.runId && rt.pendingRoom.Seq > rt.consumedSeq))
+                    rt.ReleaseStaleLocks();
+                    // A failure here must not escape into the game's room-load state machine and stall it.
+                    if (rt.Hosting) { try { rt.HostRoomLoading(systems); } catch (Exception ex) { Log("Announcing the room failed: " + ex); } }
+                    else
                     {
-                        rt.waitingForHost = true;
-                        yield return state;
+                        while (rt.IsClient && rt.Connected && !(rt.pendingRoom != null && rt.pendingRoom.Run == rt.runId && rt.pendingRoom.Seq > rt.consumedSeq))
+                        {
+                            rt.waitingForHost = true;
+                            yield return state;
+                        }
+                        rt.waitingForHost = false;
+                        if (rt.IsClient && rt.Connected) { try { rt.ApplyRoom(state, systems); } catch (Exception ex) { Log("Following the host's room failed: " + ex); } }
+                        if (rt.labHeldEnding != null)
+                        {
+                            string held = rt.labHeldEnding; rt.labHeldEnding = null; Log("Lab: the ending arrives during this load");
+                            rt.ClientEnding(held);
+                            if (rt.labHeldEndRun) { rt.labHeldEndRun = false; rt.ClientEndRun(); }
+                        }
                     }
-                    rt.waitingForHost = false;
-                    if (rt.IsClient && rt.Connected) { try { rt.ApplyRoom(state, systems); } catch (Exception ex) { Log("Following the host's room failed: " + ex); } }
                 }
+                while (original.MoveNext()) yield return original.Current;
             }
-            while (original.MoveNext()) yield return original.Current;
+            // Room ready zeroes the count while this iterator may still be finishing: never below 0.
+            finally { if (rt != null && rt.roomLoads > 0) rt.roomLoads--; }
         }
+        // Room loads in progress here (WrapLoad running): a held ending waits for them. Also zeroed when a room is ready
+        // or the run ends, in case the game drops a load's enumerator without disposing it.
+        int roomLoads;
 
         void HostRoomLoading(HSMSystemsLoadState systems)
         {

@@ -450,7 +450,7 @@ namespace SpookyTogether
         const float StandInGrace = 1.5f;
         float roomReadyAt = -100;
         int roomReadySeq = -1;
-        public void NoteRoomReady() { roomReadyAt = Time.realtimeSinceStartup; roomReadySeq = CurrentRoomSeq; }
+        public void NoteRoomReady() { roomReadyAt = Time.realtimeSinceStartup; roomReadySeq = CurrentRoomSeq; roomLoads = 0; }
 
         // Stand-ins wait for this game's own room to be ready: a copy spawned while the room loads has no spawn door yet,
         // and chasers such as EMKHMonster5 then emerge from a missing door every frame.

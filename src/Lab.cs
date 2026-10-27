@@ -48,6 +48,7 @@ namespace SpookyTogether
             }
             catch (Exception ex) { Log("Lab log unavailable: " + ex.Message); }
             Application.logMessageReceivedThreaded += CountErrors;
+            LabLowSettings();
         }
 
         static void WriteLab(string line)
@@ -85,6 +86,15 @@ namespace SpookyTogether
             Log("ST-CHECK " + name + " " + (pass ? "PASS" : "FAIL") + " " + detail);
         }
 
+        // Lab copies share the PC with the user and other labs: lowest quality, 30 fps. Checked every 10 s because the
+        // game applies its saved options after start.
+        static void LabLowSettings()
+        {
+            if (QualitySettings.GetQualityLevel() != 0) QualitySettings.SetQualityLevel(0, true);
+            if (QualitySettings.vSyncCount != 0) QualitySettings.vSyncCount = 0;
+            if (Application.targetFrameRate != 30) Application.targetFrameRate = 30;
+        }
+
         void LabUpdate()
         {
             if (!LabMode) return;
@@ -94,6 +104,7 @@ namespace SpookyTogether
             if (now >= nextMetric)
             {
                 nextMetric = now + 10;
+                LabLowSettings();
                 long heap = GC.GetTotalMemory(false);
                 long unity = Profiler.GetTotalAllocatedMemoryLong();
                 GameObject[] all = Resources.FindObjectsOfTypeAll<GameObject>();

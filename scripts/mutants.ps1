@@ -19,6 +19,7 @@ $mutants = [ordered]@{
     'lookretry'   = 'latelook'  # a client that painted before a re-skinning specimen's materials loaded repaints once they do
     'earlypuppet' = 'latelook'  # a late joiner spawns host specimens only once its room is ready, so no missing-door errors
     'endingload'  = 'loadending' # an ending that arrives mid room load waits for the load instead of being lost
+    'endingstall' = 'stallending' # a held ending with no room load to wait for still goes after 3 s
     'furnace'     = 'furnace'   # furnace actions re-read the shared state and run on the host, so one key results
 }
 $lines = @("Spooky Together mutation check, $Players players, $(Get-Date -Format s)")

@@ -14,10 +14,11 @@ The user's standing requirements:
 - only what multiplayer compatibility needs;
 - online play through the Steam API, not the global relay server (2026-10-26).
 
-## Current version: 0.2.10 (pre-release), protocol 9
-- **Release:** v0.2.10 is a GitHub pre-release with both ZIPs. The only known issue is `takerbail`, below.
+## Current version: 0.2.11 (pre-release), protocol 9
+- **Release:** v0.2.11 fixes 0.2.10's known issue (an ending held for a room load that never came). See `MODLOG.md`.
 - **Real play:** the owner played with three or more friends on separate PCs and Steam accounts, four players together, with no problems (2026-10-27).
-- **Website:** graded A, "available". The Website session keeps it in sync.
+- **Website:** graded A, "available". The Website session (local_211a3291-3165-4fdf-8d32-3da6780cf595) keeps it in sync; Co-op Anything write-up: PR cranebeaker/coop-anything#221 (branch `game/spooky-jump-scare-mansion` on multiplayereverything/coop-anything).
+- **Working rules (user, 2026-10-27):** don't stop to ask; make the call and note it here and in MODLOG. Lab copies start minimized and small (see AGENTS.md), one tour at a time. Use the Co-op Anything MCP and coop-* skills and say which page was used. End each batch with a results table.
 
 ## Setting up on a new PC
 Everything below except the GitHub repo lives outside git; rebuild it as follows.
@@ -45,23 +46,15 @@ Everything below except the GitHub repo lives outside git; rebuild it as follows
    Never edit game bytes through these links. `scripts/launch-lab.ps1` copies the fresh build into each copy and starts them hidden; `run-tour.ps1`, `lab-suite.ps1` and `mutants.ps1` drive them. Hardlinks must be on the same drive as `<game>`, so they may need a re-link if the drive differs.
 8. **Decompiled game (optional, for research):** `private/decompiled/` (about 23 MB) and its graph. Regenerate it with `ilspycmd` from `<game>/SpookyUnity_Data/Managed/Assembly-CSharp.dll`, or copy it over by hand.
 
-## Paused 2026-10-26 (user: "stop the mods for now")
-- **0.2.10 is published as a pre-release with a known issue** (2026-10-27, at the user's request, with no further fixes or tests). It is committed, pushed and installed (BepInEx; the 0.2.9 plugin is backed up in `private/backups/install-0.2.10`). The known issue is the `takerbail` failure below.
-- **Last results on the 0.2.10 code.**
-  - Full suite (before the later fixes): 22/27. The fails were takerbail, pairing, chase, latelook and EM_Mansion.
-  - Reruns after the fixes: pairing, chase, latelook and EM_Mansion pass. `loadending` passes twice.
-  - **`takerbail` still fails.** Clients get Credits as the host bails to it, "while this room loads". They never start loading End_05, so the held ending is dropped after 30 s (logs: `artifacts/tests/logs/takerbail`).
-  - The `endingload` and `pairing` mutation reruns were not run.
-- **Resume with:**
-  1. Fix the ending hold so it cannot stall. `RoomLoading` is true here, but no room load follows; check whether `pendingRoom` was set before the ending arrived. Either apply the ending once no load has started within a few seconds, or treat "loading" as an active `HSMLoadRoomState` transition. Rerun `takerbail` and `loadending`.
-  2. Rerun the mutants for `endingload`, `pairing`, `earlypuppet`, `lookretry` and `keyorder`. Then run the full suite.
-  3. Then release the fix as 0.2.11: pre-release, Website session (local_211a3291-3165-4fdf-8d32-3da6780cf595).
+## Moved to a new PC (2026-10-27)
+- The repo, `deps/` and `private/` (decompilation, lab copies) were carried over. The lab copies had arrived as full copies of the game; they were checked against the install (189 files, same Assembly-CSharp) and re-linked (junctions and hardlinks) to `C:/Program Files (x86)/Steam/steamapps/common/Spooky's Jump Scare Mansion HD Renovation`.
+- BepInEx and the mod are not installed in that game folder on this PC (the lab copies don't need it). Install them as in step 6 above before playing here.
 
-## State details: 0.2.10, protocol 9
+## State details: 0.2.11, protocol 9
 - **Source:** https://github.com/multiplayereverything/spooky-together (private, `main`). Commit as `multiplayereverything` with the GitHub no-reply address, and push after each version.
 - **Moved 2026-10-25:** the source moved from `<game>/MultiplayerMod` to `ai-work-pc-games/Spooky Mulitplayer Mod`. `build.ps1` finds the game itself; the lab copies (`private/lab-*`) still hardlink and junction into `<game>`.
 - **Online:** Steam lobbies plus Steam Networking Sockets P2P (`SteamLobby.cs`, `SteamNet.cs`). The global relay, room codes and mods-info are gone. LAN / direct (TCP 27020) and the LAN list (UDP 27021) remain.
-- **Tests (0.2.10):** the full suite ran on 0.2.9 (21/24; the two real failures are fixed in 0.2.10, see `MODLOG.md`). New tours `chase`, `latekey`, `latelook`; 14 mutation switches, none survived. `state` and `enemies` over Steam ran on 0.2.8.
+- **Tests (0.2.11):** the full suite passes 29/29 on the new PC with the lab windows minimized (`pairing` needed the 5-sample heap rule, see `MODLOG.md`). 16 mutation switches; the seven touched in 0.2.10-0.2.11 were rerun and all caught. `state` and `enemies` over Steam ran on 0.2.8.
 - **Releases:** every version is a tagged GitHub release, pre-release while untested (the Discord bot announces them). v0.2.8, v0.2.9 (2026-10-26) and v0.2.10 (2026-10-27) are published as pre-releases with their ZIPs. `scripts/package.ps1` builds the ZIPs; lint them with `um publish check` before uploading.
 - **Installed on the old PC:** the 0.2.10 BepInEx build in `<game>/BepInEx/plugins/SpookyTogether/`, with BepInEx 5.4.23.5.
 
@@ -74,7 +67,9 @@ Everything below except the GitHub repo lives outside git; rebuild it as follows
    - `puzzles` uses a test puzzle segment;
    - `lateending` simulates a late or lost ending;
    - the kept-player retargeting is watched end to end for Specimen 8 only (`chase`); Spec6, Hooked Doll, Frenzy and Nightmare are checked by counting rewritten reads.
-5. **EMKHMonster5's update error at a room change** is listed as a known game error (it shows on the host too) without a host-only control run. Confirm it in single-player, or guard it, if it shows up in real play.
+5. **Steam lobby membership (reviewed 2026-10-27, left open on purpose):** the host accepts any Steam P2P connection, not only lobby members. A strict check needs a grace period (the member list and the connection request arrive by different paths) and a two-account test; see MODLOG 0.2.11.
+6. **Window title on MelonLoader copies:** the launcher hides MelonLoader's console and names only the Unity window; if a copy shows "SpookyHD", its window appeared after 15 s.
+7. **EMKHMonster5's update error at a room change** is listed as a known game error (it shows on the host too) without a host-only control run. Confirm it in single-player, or guard it, if it shows up in real play.
 
 ## Safety
 - **Lab copies:** `private/lab-{host,client,c2,c3}` use hardlinks and junctions, so never edit game bytes through them.

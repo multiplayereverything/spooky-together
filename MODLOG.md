@@ -1,5 +1,42 @@
 # Spooky Together mod log
 
+## 0.2.11 (2026-10-27): a held ending can no longer stall, protocol 9
+Request: carry on from the handoff on a new PC (fix the takerbail ending hold, rerun the mutants and suites, release). Playbook used: Co-op Anything `lessons` 7 (bugs live in transitions), 4 (poll, don't check once) and 42 (force rare event orders directly).
+
+### Fixed
+- **A held ending could wait for a room load that never came.** 0.2.10 holds an ending that reaches a client mid room load until the room is ready. In the 0.2.10 full suite (`takerbail`) a client got Credits as it left its room, no load followed, and the ending was dropped after 30 s. A held ending now also goes after 3 s when no room load is running here (`WrapLoad` counts them; the count is also zeroed at room ready and run end) and the game's state machine is not mid-transition (`HierarchicalStateMachine.transitionInProgress`, the flag its push throws on). The hold logs the active state, so a recurrence shows where the client was. (The first version zeroed the load count at room ready while a load was still finishing and could go to -1, which disabled the fallback; the `loadending` tour caught it, and the count now stops at 0.)
+
+### Changed (lab)
+- **Lab windows (user request, 2026-10-27):** the copies start minimized in the taskbar as normal titled windows ("Spooky lab - host", "- c1" ...) at 480x270, `-screen-quality Fastest`, 30 fps (the mod sets the lowest quality level and `targetFrameRate` in lab mode, re-checked every 10 s) and BelowNormal priority. Restoring one brings it up at the right edge of the primary monitor, stacked; the placement is set once, so a window the user moved or restored is left alone. Nothing is activated or made topmost. MelonLoader's console is hidden. `-Hidden` (launch-lab.ps1 and run-tour.ps1) keeps the old hidden mode.
+- **Stray runs:** any run the lab's auto-start did not begin is treated as stray, not only a wrong mansion, and tours wait while the run is not the mansion they asked for (`takerbad` and the `lookretry` mutant run each ran in a stray run on 2026-10-27).
+- **`loadending` is deterministic:** each client holds the host's ending (and the end-of-run behind it) until its own room-3 load is under way, then receives it from inside that load. On the new PC's timing the ending otherwise arrived before the load began, and the `endingload` mutant survived.
+
+### Reviewed: Steam networking (`coop-networking` skill, playbook `networking-steam-spacewar`)
+- Lobbies (friends-only, tagged and versioned lobby data), the overlay invite, rich presence `connect`, `GameLobbyJoinRequested`, `GameRichPresenceJoinRequested` and `+connect_lobby` are all handled; the game's own app id and Steamworks.NET are used (no Spacewar, no global relay).
+- Steam Networking Sockets (connection-oriented): reliable messages, connection-status callbacks for closed-by-peer and local problems, Steam's own timeouts plus the mod's Ping/Pong, version checked from lobby data before connecting, a full game refused with a reason, the host's lobby kept by the host on owner change.
+- Proven in real play: the owner played with three friends on separate PCs and Steam accounts (2026-10-27).
+- **Gap left open on purpose:** the host accepts any P2P connection, not only lobby members (the playbook's relay rule). The host's member list and the connection request arrive by different paths, so a strict check could refuse a real friend, and the lab (one Steam account, IP sockets) cannot test it. The Hello version check and the 4-player cap stay the guard. Listed in the handoff.
+
+### Added (testing)
+- **Tour `stallending`** (synthetic, like `lateending`): C1 counts as loading for 40 s after the ending arrives, with no load following. It must still reach Credits.
+- **Mutation switch `endingstall`** (16 in all), guarded by `stallending`.
+- **Heap rule needs 5 samples:** `verify-lab.py` judges the managed-heap slope only with at least five in-room samples. `pairing` has six, so the rule saw three samples inside one garbage-collector sawtooth (27.5, 29.3, 31.3 MB) and failed twice with every check passing. The soak tours (47 rooms) judge long runs.
+- **New PC (2026-10-27):** the four lab copies, which had come over as full copies, now link into the installed game again: junctions for `SpookyUnity_Data` and `MonoBleedingEdge`, hardlinks for the exe and DLLs. All 189 data files matched the install before the swap (Assembly-CSharp `f657ebc2…`).
+
+### Evidence (4 players, windows hidden, new PC, CPU about 45%)
+| Run | Result | Notes |
+| --- | --- | --- |
+| `takerbail` x4 | 4/4 PASS | one run held the ending during a real load ("HSMLoadRoomState, loads 1") and then reached Credits |
+| `stallending` | PASS | held, then "No room load followed the held ending (HSMGameplayState); going now", Credits |
+| Mutant `endingstall` | caught | `stall.prompt`: 3.7 s with the fix, 68 s without (the held ending was dropped at 30 s) |
+| `rules-test.py`, `test-transport.ps1` | pass, 5/5 | |
+| Quick suite (0.2.10 code plus the hold fix) | 19/20 | `takerbad` ran in a stray run (lab, fixed above) |
+| Mutants `pairing`, `keyorder`, `earlypuppet` | caught | `lookretry` ran in a stray run, `endingload` survived the old `loadending` (both fixed above) |
+| Mutants after the lab fixes: `pairing`, `endingrescue`, `keyorder`, `lookretry`, `earlypuppet`, `endingload`, `endingstall` | 7/7 caught | `lookretry`: c1-c3 kept their own walls; `endingload`: no client reached Credits |
+| `takerbad`, `takerbail`, `stallending`, `latelook` | 4/4 PASS | windows minimized |
+| `loadending`, windows minimized | PASS | every client: ending delivered inside the room-3 load, held ("HSMLoadRoomState, loads 1"), then Credits; windows "Spooky lab - host/c1/c2/c3", minimized, BelowNormal, 30 fps |
+| Full suite (0.2.11, windows minimized) | 28/29, then 29/29 | `pairing` failed only the heap-slope rule (three-sample sawtooth, see above); every check passed, and it passes under the 5-sample rule. Includes 150 ms lag, the soak over the LAN address with 120 ms lag, and full EM, KH and dollhouse mansions |
+
 ## 0.2.10 (2026-10-27, pre-release with a known issue): late joiners and re-skinned rooms, protocol 9
 **Status:** published as a GitHub pre-release at the user's request, without further fixes or test runs. **Known issue:** the `takerbail` rerun still fails, because the ending hold below can stall when no room load follows (see `handoff.md`).
 

@@ -1,4 +1,6 @@
 using System.IO;
+using System.Reflection;
+using HarmonyLib;
 using UnityEngine;
 using Object = UnityEngine.Object;
 
@@ -31,7 +33,33 @@ namespace SpookyTogether
         }
 
         // HSMLoadRoomState stays in the chain once the room is ready, so "loading" is a floor without a ready room.
-        static bool RoomLoading { get { return Closest<HSMFloorState>() != null && Closest<HSMRoomReadyState>() == null; } }
+        static bool RoomLoading { get { return (Closest<HSMFloorState>() != null && Closest<HSMRoomReadyState>() == null) || Time.realtimeSinceStartup < labStallUntil; } }
+        // Lab (stallending): C1 counts as loading for 40 s (past the 30 s drop) after the ending arrives, with no load following, as in the
+        // takerbail stall seen on 2026-10-26.
+        static float labStallUntil = -1;   // lab-only
+
+        // The game's push throws while its state machine is mid-transition; outside one a held ending can go.
+        static FieldInfo hsmTransition;   // process-scoped: reflection cache
+        static bool StateTransition
+        {
+            get
+            {
+                HSMGameManager gm = Hsm;
+                if (gm == null || gm.hsm == null) return false;
+                if (hsmTransition == null) hsmTransition = AccessTools.Field(typeof(HierarchicalStateMachine), "transitionInProgress");
+                return hsmTransition != null && (bool)hsmTransition.GetValue(gm.hsm);
+            }
+        }
+
+        static string ActiveStateName
+        {
+            get
+            {
+                HSMGameManager gm = Hsm;
+                object state = gm != null && gm.hsm != null ? Traverse.Create(gm.hsm).Field("activeState").GetValue() : null;
+                return state != null ? state.GetType().Name : "none";
+            }
+        }
 
         void BroadcastEnding(string killscreen)
         {
@@ -54,13 +82,19 @@ namespace SpookyTogether
             finally { AllowEnding = false; }
         }
 
-        void ClientEnding(BinaryReader reader)
+        // Lab (loadending): the team's ending is held here until this client's own room-3 load is under way, then
+        // delivered from inside it (Rooms.WrapLoad), so it always arrives mid-load whatever the PC's timing.
+        string labHeldEnding;
+        bool labHeldEndRun;
+
+        void ClientEnding(string killscreen)
         {
-            string killscreen = Wire.Text(reader, 200);
+            if (LabMode && labTour == "loadending" && consumedSeq < 3 && roomLoads == 0) { labHeldEnding = killscreen; Log("Lab: holding the ending until room 3 loads"); return; }
             endingSent = killscreen; lastEnding = killscreen; clientEndingAt = Time.realtimeSinceStartup;
             // Lab (lateending): C2 takes the ending as if it were still loading into the run; C3 loses it entirely.
             if (labTour == "lateending" && SelfId == 3) { Log("Lab: ignoring the team's ending"); return; }
             bool labLate = labTour == "lateending" && SelfId == 2;
+            if (labTour == "stallending" && SelfId == 1) labStallUntil = Time.realtimeSinceStartup + 40;
             pendingStartMansion = null;
             if (labLate || !RunActive || Closest<HSMGameRootState>() == null)
             {
@@ -75,7 +109,7 @@ namespace SpookyTogether
             if (RoomLoading && !Mutant("endingload"))
             {
                 pendingEnding = killscreen; pendingEndingAt = Time.realtimeSinceStartup;
-                Log("The team reached " + killscreen + " while this room loads; following once it has.");
+                Log("The team reached " + killscreen + " while this room loads (" + ActiveStateName + ", loads " + roomLoads + "); following once it has.");
                 return;
             }
             pendingRoom = null;
@@ -109,6 +143,13 @@ namespace SpookyTogether
             {
                 if (now - pendingEndingAt > 30) { Log("Dropped the team's ending " + pendingEnding + ": this game never got into the run."); pendingEnding = null; }
                 else if (RunActive && Closest<HSMGameplayState>() != null && !RoomLoading) { string k = pendingEnding; pendingEnding = null; ApplyEnding(k); }
+                // No room load followed (this game was between rooms when the host's room changed): go once the state
+                // machine is between transitions rather than waiting for a room that is not coming.
+                else if (RunActive && Closest<HSMGameRootState>() != null && now - pendingEndingAt > 3 && roomLoads == 0 && !StateTransition && !Mutant("endingstall"))
+                {
+                    Log("No room load followed the held ending (" + ActiveStateName + "); going now.");
+                    string k = pendingEnding; pendingEnding = null; ApplyEnding(k);
+                }
             }
             if (endRunCheckAt > 0 && now >= endRunCheckAt)
             {

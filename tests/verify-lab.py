@@ -95,7 +95,8 @@ def main():
             })
             if slope(err) > 0.5:
                 failures.append(f"{role}: game errors keep growing ({slope(err):.2f} per 10 s)")
-            if slope(heap) > 1.5:
+            # Three samples sit inside one garbage-collector sawtooth; the soak tours judge long runs.
+            if len(heap) >= 5 and slope(heap) > 1.5:
                 failures.append(f"{role}: managed heap keeps growing ({slope(heap):.2f} MB per 10 s)")
             mod = sorted(float(m["modms"]) for m in metrics if "modms" in m)
             if mod:

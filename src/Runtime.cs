@@ -25,7 +25,7 @@ namespace SpookyTogether
 
     public sealed partial class TogetherRuntime : MonoBehaviour
     {
-        public const string ModVersion = "0.2.10";
+        public const string ModVersion = "0.2.11";
         public static TogetherRuntime Instance;   // process-scoped: the one runtime object
         public static Action<string> Log = delegate { };   // process-scoped: logger hook set by the loader entry
         public Transport Network;

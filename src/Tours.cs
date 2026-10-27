@@ -27,6 +27,9 @@ namespace SpookyTogether
         {
             if (string.IsNullOrEmpty(labTour) || tourDone || !Connected || !RunActive || CurrentRoomSeq < 2) return;
             if (Closest<HSMGameplayState>() == null) return;
+            // A stray run (the hidden windows sometimes start the base mansion themselves) is not the tour's: the lab
+            // guard takes the host back to the menu and starts the right one, and the tour waits for that.
+            if (Hosting && !string.IsNullOrEmpty(labMansion) && runMansion != labMansion) return;
             SpookyCharacterController player = SpookyCharacterController.GetInstance();
             if (player == null || !player.ready) return;
             float now = Time.realtimeSinceStartup;
@@ -36,6 +39,7 @@ namespace SpookyTogether
                 case "enemies": if (Hosting) HostEnemyTour(player, now); else ClientEnemyTour(now); break;
                 case "state": StateTour(player, now); break;
                 case "axe": AxeTour(player, now); break;
+                case "stallending":
                 case "ending": if (Hosting && now >= tourAt && Once("ending")) { Log("Tour: host goes to Credits"); Closest<HSMGameRootState>().GotoKillscreen("Credits"); } break;
                 case "reconnect": ReconnectTour(now); break;
                 case "dollprops": DollPropsTour(now); break;
@@ -73,11 +77,13 @@ namespace SpookyTogether
         // Clients and host both confirm an ending by being in a killscreen state.
         void TourEndingWatch()
         {
-            if (labTour != "ending" && labTour != "clientending" && labTour != "lateending" && labTour != "loadending" && !labTour.StartsWith("taker", StringComparison.Ordinal)) return;
+            if (labTour != "ending" && labTour != "clientending" && labTour != "lateending" && labTour != "loadending" && labTour != "stallending" && !labTour.StartsWith("taker", StringComparison.Ordinal)) return;
             if (Closest<HSMKillscreenState>() != null && Once("ending.reached"))
             {
                 Check("ending.reached", true, "role=" + (Hosting ? "host" : "client") + " ending=" + (lastEnding ?? "unknown"));
                 Check("ending." + (lastEnding ?? "unknown"), true, "role=" + (Hosting ? "host" : "client"));
+                // stallending: the held ending must go within seconds, not by the 30 s drop and the end-of-run route.
+                if (labTour == "stallending" && SelfId == 1) Check("stall.prompt", Time.realtimeSinceStartup - clientEndingAt < 10, (Time.realtimeSinceStartup - clientEndingAt).ToString("0.0") + " s after the ending arrived");
             }
         }
 

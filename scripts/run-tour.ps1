@@ -1,6 +1,7 @@
-# Runs one scripted lab tour with hidden windows and judges it. Results go to artifacts/tests/<tour>-results.json.
-# Usage: run-tour.ps1 -Tour enemies [-Players 4] [-Seconds 120] [-Mutate retarget] (-Mutate turns fixes off; see mutants.ps1)
-param([Parameter(Mandatory)][string]$Tour, [int]$Players = 4, [int]$Seconds = 0, [string]$Mansion = '', [int]$MinRooms = -1, [int]$Lag = 0, [string]$Address = '127.0.0.1', [switch]$Steam, [string]$Mutate = '')
+# Runs one scripted lab tour and judges it. The copies start minimized and small (see launch-lab.ps1; -Hidden hides them).
+# Results go to artifacts/tests/<tour>-results.json.
+# Usage: run-tour.ps1 -Tour enemies [-Players 4] [-Seconds 120] [-Mutate retarget] [-Hidden] (-Mutate turns fixes off; see mutants.ps1)
+param([Parameter(Mandatory)][string]$Tour, [int]$Players = 4, [int]$Seconds = 0, [string]$Mansion = '', [int]$MinRooms = -1, [int]$Lag = 0, [string]$Address = '127.0.0.1', [switch]$Steam, [string]$Mutate = '', [switch]$Hidden)
 $ErrorActionPreference = 'Stop'
 $modRoot = Split-Path $PSScriptRoot -Parent
 $tours = @{
@@ -24,6 +25,7 @@ $tours = @{
     'latekey'      = @{ Seconds = 120; Expect = @('client.latekey.kept') }
     'latelook'     = @{ Seconds = 150; Expect = @('client.room.look', 'puppet.roomready@c3') }
     'loadending'   = @{ Seconds = 140; Expect = @('ending.Credits') }
+    'stallending'  = @{ Seconds = 120; Expect = @('ending.Credits', 'stall.prompt@c1') }
     'chase'        = @{ Seconds = 150; Expect = @('chase.target@host') }
     'stuck'        = @{ Seconds = 150; Expect = @('locks.released@anyclient') }
     'cutouts'      = @{ Seconds = 420; Expect = @('client.cutout.side','client.cutout.look') }
@@ -80,9 +82,9 @@ if ($Steam) {
 # Endurance runs (soak, campaigns) last their full time; every other tour stops as soon as all its checks have passed.
 $early = $spec.Expect.Count -gt 0 -and $Tour -notin @('soak', 'mansion') -and !$spec.MinRooms
 if (!$early) {
-    & (Join-Path $PSScriptRoot 'launch-lab.ps1') -Players $Players -Seconds $Seconds -HostArgs $hostArgs -ClientArgs $clientArgs -Tour $tourArg -JoinAddress $Address
+    & (Join-Path $PSScriptRoot 'launch-lab.ps1') -Players $Players -Seconds $Seconds -HostArgs $hostArgs -ClientArgs $clientArgs -Tour $tourArg -JoinAddress $Address -Hidden:$Hidden
 } else {
-    & (Join-Path $PSScriptRoot 'launch-lab.ps1') -Players $Players -HostArgs $hostArgs -ClientArgs $clientArgs -Tour $tourArg -JoinAddress $Address
+    & (Join-Path $PSScriptRoot 'launch-lab.ps1') -Players $Players -HostArgs $hostArgs -ClientArgs $clientArgs -Tour $tourArg -JoinAddress $Address -Hidden:$Hidden
     $deadline = (Get-Date).AddSeconds($Seconds)
     $probe = Join-Path $modRoot 'private/tour-probe.json'
     $probeArgs = @((Join-Path $modRoot 'tests/verify-lab.py'), $modRoot, '--out', $probe)

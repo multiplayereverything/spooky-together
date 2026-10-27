@@ -209,7 +209,7 @@ namespace SpookyTogether
                 case Op.Hit: ApplyHit(reader, 0); break;
                 case Op.Weapon: ApplyWeapon(reader, 0); break;
                 case Op.Swing: ApplySwing(reader, 0); break;
-                case Op.Ending: ClientEnding(reader); break;
+                case Op.Ending: ClientEnding(Wire.Text(reader, 200)); break;
                 case Op.BossReflect: ApplyBossReflect(0); break;
                 case Op.SpecSound: ClientSound(reader); break;
                 case Op.CutoutState: ClientCutoutState(reader); break;
