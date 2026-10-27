@@ -35,10 +35,7 @@ The user's standing requirements:
 - **Installed:** 0.2.9 BepInEx build in `<game>/BepInEx/plugins/SpookyTogether/` (SHA256 d033dcdf…d33b, the build the last tours ran), with BepInEx 5.4.23.5. Not launched by hand yet.
 
 ## Next steps
-1. **Real Steam session between two Steam accounts.** The lab shares one account, so Valve's P2P relay itself is untested. Check:
-   - the lobby appears in a friend's list;
-   - invite and Join Game work;
-   - a full run reaches an ending.
+1. **Real play (done, reported 2026-10-27):** the owner played with three or more friends on separate PCs and separate Steam accounts, four players together, with no problems. The lab still shares one account, so the lab cannot repeat this.
 2. **Keep the suite green.** Run `scripts/lab-suite.ps1 -Quick` after changes, and `scripts/mutants.ps1` after changing a guarded fix.
 3. **Run tests on a quiet PC.** Other sessions' game labs (MiSide, Baldi) running at the same time push CPU to about 95%. The late lab copy (c3) then misses the run start, which fails tours that pass on a quiet PC.
 4. **Not verified in play:** the five 0.2.9 fixes are covered by lab tours, some of them synthetic:

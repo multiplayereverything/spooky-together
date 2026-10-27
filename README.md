@@ -81,7 +81,7 @@ Only the host can open it; on a client F6 just shows a message.
 - **The AFK Taker** (Specimen 9) appears only for the player who idles.
 - **If the host disconnects,** clients keep playing alone; there is no host migration.
 - **Starting the exe directly** without Steam makes the game quit and relaunch through Steam. Launch it through Steam.
-- **Online play needs Steam** running and signed in on every PC. Steam's peer-to-peer relay has only been tested between lab copies on one PC (one Steam account), not yet between two accounts.
+- **Online play needs Steam** running and signed in on every PC. Played by the owner with three or more friends on separate PCs and separate Steam accounts, four players together, with no problems (reported 2026-10-27).
 
 ## Install
 - **BepInEx 5.4.23:**
